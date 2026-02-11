@@ -30,12 +30,16 @@ The output follows a fixed structure:
 ## Installation
 
 ```bash
-git clone <this-repo> ~/.pi/agent/extensions/pi-omni-compact
+pi install https://github.com/Whamp/pi-omni-compact
+```
+
+Or manually:
+
+```bash
+git clone https://github.com/Whamp/pi-omni-compact ~/.pi/agent/extensions/pi-omni-compact
 cd ~/.pi/agent/extensions/pi-omni-compact
 npm install
 ```
-
-pi discovers the extension automatically via `package.json`'s `pi.extensions` field.
 
 ## Configuration
 
@@ -46,9 +50,17 @@ Edit `settings.json` in the extension directory to configure which models to try
   "models": [
     { "provider": "google-antigravity", "id": "gemini-3-flash", "thinking": "high" },
     { "provider": "google-antigravity", "id": "gemini-3-pro-low", "thinking": "high" }
-  ]
+  ],
+  "debugCompactions": false,
+  "minSummaryChars": 100
 }
 ```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `models` | Gemini 3 Flash, Gemini 3 Pro | Ordered list of models to try. First with a valid API key wins. |
+| `debugCompactions` | `false` | Save input/output JSON to `~/.pi/agent/extensions/pi-omni-compact/compactions/` for diagnosing bad summaries. |
+| `minSummaryChars` | `100` | Minimum summary length. Shorter output triggers fallback to default compaction. |
 
 API keys are resolved through pi's model registry — no separate key configuration needed.
 
@@ -68,7 +80,7 @@ Strongest on sessions with concrete implementation work. Weakest on pure explora
 
 ```bash
 npm run validate   # typecheck + lint + format check
-npm test           # unit + integration tests (83 tests)
+npm test           # unit + integration tests (103 tests)
 npm run test:e2e   # end-to-end tests (requires real Gemini API key)
 npm run build      # compile to dist/
 ```
@@ -83,6 +95,7 @@ src/
   prompts.ts      System prompts (initial, incremental, branch)
   subprocess.ts   Spawn pi subprocess, parse JSON event stream
   settings.ts     Load and validate settings.json
+  debug.ts        Save compaction input/output as debug artifacts
 ```
 
 ## License
