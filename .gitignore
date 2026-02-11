@@ -4,3 +4,5 @@ dist/
 *.d.ts
 *.js.map
 !settings.json
+.pi/tmp
+.codemap/
