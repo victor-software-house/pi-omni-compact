@@ -14,6 +14,8 @@ import {
   serializeConversation,
 } from "@mariozechner/pi-coding-agent";
 
+import type { SessionAnalysis } from "./session-analysis.js";
+
 /** Subset of CompactionPreparation needed for serialization */
 interface CompactionInput {
   messagesToSummarize: AgentMessage[];
@@ -23,6 +25,7 @@ interface CompactionInput {
   previousSummary?: string;
   fileOps: FileOperations;
   customInstructions?: string;
+  sessionAnalysis?: SessionAnalysis;
 }
 
 /**
@@ -96,9 +99,15 @@ export function serializeCompactionInput(preparation: CompactionInput): string {
     previousSummary,
     fileOps,
     customInstructions,
+    sessionAnalysis,
   } = preparation;
 
   const sections: string[] = [];
+
+  // Session structure analysis (before conversation for context)
+  if (sessionAnalysis) {
+    sections.push(formatSessionAnalysis(sessionAnalysis));
+  }
 
   // Main conversation
   const conversationText = serializeConversation(
@@ -145,7 +154,8 @@ export function serializeCompactionInput(preparation: CompactionInput): string {
  * Serialize branch entries into hybrid input format for branch summarization.
  */
 export function serializeBranchInput(
-  entriesToSummarize: SessionEntry[]
+  entriesToSummarize: SessionEntry[],
+  sessionAnalysis?: SessionAnalysis
 ): string {
   const messages: AgentMessage[] = [];
   for (const entry of entriesToSummarize) {
@@ -155,6 +165,103 @@ export function serializeBranchInput(
     }
   }
 
+  const sections: string[] = [];
+
+  if (sessionAnalysis) {
+    sections.push(formatSessionAnalysis(sessionAnalysis));
+  }
+
   const conversationText = serializeConversation(convertToLlm(messages));
-  return `<conversation>\n${conversationText}\n</conversation>`;
+  sections.push(`<conversation>\n${conversationText}\n</conversation>`);
+
+  return sections.join("\n\n");
+}
+
+/**
+ * Format a SessionAnalysis into the <session-structure> section.
+ */
+function formatSessionAnalysis(analysis: SessionAnalysis): string {
+  const { stats, boundaries, friction, delight, filesTouched } = analysis;
+  const lines: string[] = [
+    // Stats
+    `Messages: ${stats.messageCount} (user: ${stats.userMessageCount}, assistant: ${stats.assistantMessageCount}, tool: ${stats.toolResultCount})`,
+  ];
+  if (stats.modelsUsed.length > 0) {
+    lines.push(`Models: ${stats.modelsUsed.join(", ")}`);
+  }
+  lines.push(
+    `Compactions: ${stats.compactionCount} | Branch points: ${stats.branchPointCount}`
+  );
+
+  // Boundaries
+  if (boundaries.length > 0) {
+    lines.push("");
+    lines.push("Boundaries:");
+    for (const b of boundaries) {
+      lines.push(`- [${b.timestamp}] ${b.detail}`);
+    }
+  }
+
+  // Friction
+  const frictionLines: string[] = [];
+  if (friction.rephrasingCascades > 0) {
+    frictionLines.push(
+      `- Rephrasing cascades: ${friction.rephrasingCascades} (${friction.rephrasingCascades}x 3+ consecutive user messages)`
+    );
+  }
+  if (friction.toolLoops > 0) {
+    frictionLines.push(
+      `- Tool loops: ${friction.toolLoops} (same error repeated 3+ times)`
+    );
+  }
+  if (friction.contextChurn > 0) {
+    frictionLines.push(
+      `- Context churn: ${friction.contextChurn} (10+ file reads without writes)`
+    );
+  }
+  if (friction.silentTermination) {
+    frictionLines.push(
+      "- Silent termination: session ended with unresolved error"
+    );
+  }
+  if (frictionLines.length > 0) {
+    lines.push("");
+    lines.push("Friction:");
+    lines.push(...frictionLines);
+  }
+
+  // Delight
+  const delightLines: string[] = [];
+  if (delight.resilientRecovery) {
+    delightLines.push(
+      "- Resilient recovery: yes (fixed errors without user help)"
+    );
+  }
+  if (delight.oneShotSuccess) {
+    delightLines.push(
+      "- One-shot success: yes (task completed without corrections)"
+    );
+  }
+  if (delight.explicitPraise) {
+    delightLines.push("- Explicit praise: yes");
+  }
+  if (delightLines.length > 0) {
+    lines.push("");
+    lines.push("Delight:");
+    lines.push(...delightLines);
+  }
+
+  // Files touched
+  if (filesTouched.read.length > 0 || filesTouched.written.length > 0) {
+    lines.push("");
+    lines.push("Files touched:");
+    if (filesTouched.read.length > 0) {
+      lines.push(`  read: ${filesTouched.read.join(", ")}`);
+    }
+    if (filesTouched.written.length > 0) {
+      lines.push(`  written: ${filesTouched.written.join(", ")}`);
+    }
+  }
+
+  return `<session-structure>\n${lines.join("\n")}\n</session-structure>`;
 }

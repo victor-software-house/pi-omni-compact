@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { SessionAnalysis } from "../../src/session-analysis.js";
+
 import {
   serializeBranchInput,
   serializeCompactionInput,
@@ -263,5 +265,166 @@ describe("serializeBranchInput", () => {
 
     expect(firstIdx).toBeLessThan(secondIdx);
     expect(secondIdx).toBeLessThan(thirdIdx);
+  });
+});
+
+// --- Session structure tests ---
+
+function createAnalysis(overrides?: Partial<SessionAnalysis>): SessionAnalysis {
+  return {
+    stats: {
+      messageCount: 47,
+      userMessageCount: 12,
+      assistantMessageCount: 23,
+      toolResultCount: 12,
+      compactionCount: 2,
+      branchPointCount: 1,
+      modelsUsed: [
+        "google/gemini-3-flash",
+        "anthropic/claude-sonnet-4-20250514",
+      ],
+    },
+    boundaries: [
+      {
+        type: "compaction",
+        timestamp: "2026-02-10T14:23:00Z",
+        detail: "compaction: 45K tokens",
+      },
+      {
+        type: "resume",
+        timestamp: "2026-02-10T16:45:00Z",
+        detail: "resume: 2h 22m gap",
+      },
+    ],
+    friction: {
+      rephrasingCascades: 0,
+      toolLoops: 2,
+      contextChurn: 1,
+      silentTermination: false,
+    },
+    delight: {
+      resilientRecovery: true,
+      oneShotSuccess: false,
+      explicitPraise: false,
+    },
+    filesTouched: {
+      read: ["src/config.ts", "src/index.ts", "tests/unit/config.test.ts"],
+      written: ["src/config.ts", "src/types.ts"],
+    },
+    ...overrides,
+  };
+}
+
+describe("session-structure serialization", () => {
+  it("includes session-structure section when analysis is provided", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("<session-structure>");
+    expect(output).toContain("</session-structure>");
+  });
+
+  it("omits session-structure section when analysis is absent", () => {
+    const prep = createPreparation({ sessionAnalysis: undefined });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).not.toContain("<session-structure>");
+  });
+
+  it("places session-structure before conversation", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    const structIdx = output.indexOf("<session-structure>");
+    const convIdx = output.indexOf("<conversation>");
+    expect(structIdx).toBeLessThan(convIdx);
+  });
+
+  it("includes message stats", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("Messages: 47");
+    expect(output).toContain("user: 12");
+    expect(output).toContain("assistant: 23");
+    expect(output).toContain("tool: 12");
+  });
+
+  it("includes models used", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain(
+      "Models: google/gemini-3-flash, anthropic/claude-sonnet-4-20250514"
+    );
+  });
+
+  it("includes compaction and branch point counts", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("Compactions: 2 | Branch points: 1");
+  });
+
+  it("includes boundaries", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("Boundaries:");
+    expect(output).toContain("[2026-02-10T14:23:00Z] compaction: 45K tokens");
+    expect(output).toContain("[2026-02-10T16:45:00Z] resume: 2h 22m gap");
+  });
+
+  it("includes friction signals", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("Friction:");
+    expect(output).toContain("Tool loops: 2");
+    expect(output).toContain("Context churn: 1");
+  });
+
+  it("includes delight signals", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("Delight:");
+    expect(output).toContain("Resilient recovery: yes");
+  });
+
+  it("includes files touched", () => {
+    const prep = createPreparation({ sessionAnalysis: createAnalysis() });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("Files touched:");
+    expect(output).toContain("read: src/config.ts, src/index.ts");
+    expect(output).toContain("written: src/config.ts, src/types.ts");
+  });
+
+  it("omits empty friction/delight/boundary sections", () => {
+    const analysis = createAnalysis({
+      boundaries: [],
+      friction: {
+        rephrasingCascades: 0,
+        toolLoops: 0,
+        contextChurn: 0,
+        silentTermination: false,
+      },
+      delight: {
+        resilientRecovery: false,
+        oneShotSuccess: false,
+        explicitPraise: false,
+      },
+      filesTouched: { read: [], written: [] },
+    });
+    const prep = createPreparation({ sessionAnalysis: analysis });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).not.toContain("Boundaries:");
+    expect(output).not.toContain("Friction:");
+    expect(output).not.toContain("Delight:");
+    expect(output).not.toContain("Files touched:");
+    // But stats should still be present
+    expect(output).toContain("Messages: 47");
   });
 });

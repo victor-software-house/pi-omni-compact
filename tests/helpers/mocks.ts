@@ -29,7 +29,9 @@ export function createMockContext(overrides?: Record<string, unknown>) {
     hasUI: true,
     cwd: "/tmp/test-project",
     modelRegistry: createMockModelRegistry(),
-    sessionManager: {},
+    sessionManager: {
+      getEntries: vi.fn().mockReturnValue([]),
+    },
     model: undefined,
     isIdle: vi.fn().mockReturnValue(true),
     abort: vi.fn(),

@@ -108,6 +108,7 @@
         "eslint/no-empty-function": "off",
         "eslint/require-await": "off",
         "eslint-plugin-unicorn/consistent-function-scoping": "off",
+        "eslint-plugin-jest/valid-expect": "off",
         "@factory/constants-file-organization": "off"
       }
     },

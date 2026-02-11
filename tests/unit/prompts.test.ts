@@ -6,6 +6,12 @@ import {
   COMPACTION_SYSTEM_PROMPT,
 } from "../../src/prompts.js";
 
+const ALL_PROMPTS = [
+  { name: "compaction", prompt: COMPACTION_SYSTEM_PROMPT },
+  { name: "incremental", prompt: COMPACTION_INCREMENTAL_SYSTEM_PROMPT },
+  { name: "branch", prompt: BRANCH_SUMMARIZATION_SYSTEM_PROMPT },
+];
+
 describe("compaction system prompt", () => {
   it("instructs the model to produce a summary, not continue conversation", () => {
     expect(COMPACTION_SYSTEM_PROMPT).toContain(
@@ -22,6 +28,7 @@ describe("compaction system prompt", () => {
     expect(COMPACTION_SYSTEM_PROMPT).toContain("## Key Decisions");
     expect(COMPACTION_SYSTEM_PROMPT).toContain("## File Changes");
     expect(COMPACTION_SYSTEM_PROMPT).toContain("## Code Patterns Established");
+    expect(COMPACTION_SYSTEM_PROMPT).toContain("## Implicit Dependencies");
     expect(COMPACTION_SYSTEM_PROMPT).toContain("## Open Questions");
     expect(COMPACTION_SYSTEM_PROMPT).toContain("## Error History");
     expect(COMPACTION_SYSTEM_PROMPT).toContain("## Next Steps");
@@ -56,9 +63,12 @@ describe("compaction incremental system prompt", () => {
     );
   });
 
-  it("instructs to preserve existing information", () => {
+  it("instructs to verify prior claims skeptically", () => {
     expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
-      "PRESERVE all existing information"
+      "VERIFY claims from the previous summary"
+    );
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
+      "Drop or correct claims the new messages contradict"
     );
   });
 
@@ -68,12 +78,22 @@ describe("compaction incremental system prompt", () => {
     );
   });
 
-  it("instructs to prune resolved items", () => {
+  it("instructs to prune resolved and irrelevant items", () => {
     expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
       "PRUNE resolved errors"
     );
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain("Open Questions");
     expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
-      "resolved questions from Open Questions"
+      "items that are no longer relevant"
+    );
+  });
+
+  it("includes verify prior claims in merge priorities", () => {
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
+      "Verify prior claims"
+    );
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
+      "drop anything contradicted by new evidence"
     );
   });
 
@@ -126,30 +146,95 @@ describe("branch summarization system prompt", () => {
 describe("accuracy rules", () => {
   it("all three prompts contain session type detection rule", () => {
     const rule = "Session type detection";
-    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
-    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
-    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain(rule);
+    }
   });
 
   it("all three prompts contain done vs in progress rule", () => {
     const rule = "Done vs In Progress";
-    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
-    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
-    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain(rule);
+    }
   });
 
   it("all three prompts contain file modifications rule", () => {
     const rule = "File modifications";
-    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
-    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
-    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain(rule);
+    }
   });
 
   it("all three prompts contain exact names rule", () => {
     const rule = "Exact names";
-    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
-    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
-    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain(rule);
+    }
+  });
+
+  it("all three prompts contain confidence markers rule", () => {
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain("Confidence markers");
+      expect(prompt).toContain("[verified]");
+      expect(prompt).toContain("[inferred]");
+      expect(prompt).toContain("[uncertain]");
+    }
+  });
+});
+
+describe("tool error resilience", () => {
+  it("all three prompts instruct to continue on tool errors", () => {
+    for (const { name, prompt } of ALL_PROMPTS) {
+      expect(prompt, `${name} missing tool resilience`).toContain(
+        "Tool Error Handling"
+      );
+      expect(prompt, `${name} missing continue instruction`).toContain(
+        "Do not abandon the summary"
+      );
+    }
+  });
+});
+
+describe("writing rules", () => {
+  it("all three prompts include Strunk's principles", () => {
+    for (const { name, prompt } of ALL_PROMPTS) {
+      expect(prompt, `${name} missing writing rules`).toContain(
+        "Writing Rules"
+      );
+      expect(prompt, `${name} missing active voice`).toContain("Active voice");
+      expect(prompt, `${name} missing omit needless words`).toContain(
+        "Omit needless words"
+      );
+      expect(prompt, `${name} missing concrete language`).toContain(
+        "Concrete language"
+      );
+    }
+  });
+
+  it("all three prompts include AI anti-patterns", () => {
+    for (const { name, prompt } of ALL_PROMPTS) {
+      expect(prompt, `${name} missing AI patterns`).toContain(
+        "Avoid AI writing patterns"
+      );
+      expect(prompt, `${name} missing puffery rule`).toContain("No puffery");
+      expect(prompt, `${name} missing hedging rule`).toContain("No hedging");
+    }
+  });
+});
+
+describe("implicit dependencies section", () => {
+  it("all three prompts include implicit dependencies in format", () => {
+    for (const { name, prompt } of ALL_PROMPTS) {
+      expect(prompt, `${name} missing implicit dependencies`).toContain(
+        "## Implicit Dependencies"
+      );
+      expect(prompt, `${name} missing env vars`).toContain(
+        "Environment variables configured or relied upon"
+      );
+      expect(prompt, `${name} missing convention-based`).toContain(
+        "Convention-based patterns"
+      );
+    }
   });
 });
 
@@ -197,6 +282,35 @@ describe("prompt distinctness", () => {
       expect(COMPACTION_SYSTEM_PROMPT).toContain(section);
       expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(section);
       expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(section);
+    }
+  });
+});
+
+describe("session-structure instructions", () => {
+  it("all three prompts contain session-structure instructions", () => {
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain("session-structure");
+      expect(prompt).toContain("## Session Structure");
+    }
+  });
+
+  it("instructs to verify file claims against files-touched list", () => {
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain(
+        "Verify file claims against the files-touched list"
+      );
+    }
+  });
+
+  it("instructs to pay attention to friction signals", () => {
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain("friction signals");
+    }
+  });
+
+  it("instructs to use stats for summary density calibration", () => {
+    for (const { prompt } of ALL_PROMPTS) {
+      expect(prompt).toContain("calibrate summary density");
     }
   });
 });

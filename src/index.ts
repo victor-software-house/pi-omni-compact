@@ -19,6 +19,7 @@ import {
   serializeBranchInput,
   serializeCompactionInput,
 } from "./serializer.js";
+import { analyzeSession } from "./session-analysis.js";
 import { loadSettings } from "./settings.js";
 import { runSummarizationAgent } from "./subprocess.js";
 
@@ -41,10 +42,14 @@ export default function (pi: ExtensionAPI) {
       "info"
     );
 
+    // Analyze full session for structural metadata
+    const sessionAnalysis = analyzeSession(ctx.sessionManager.getEntries());
+
     // Serialize event data (including customInstructions if present)
     const input = serializeCompactionInput({
       ...event.preparation,
       customInstructions: event.customInstructions,
+      sessionAnalysis,
     });
 
     // Pick system prompt variant
@@ -135,8 +140,14 @@ export default function (pi: ExtensionAPI) {
       "info"
     );
 
+    // Analyze full session for structural metadata
+    const sessionAnalysis = analyzeSession(ctx.sessionManager.getEntries());
+
     // Serialize branch entries
-    const input = serializeBranchInput(event.preparation.entriesToSummarize);
+    const input = serializeBranchInput(
+      event.preparation.entriesToSummarize,
+      sessionAnalysis
+    );
 
     const debugBase = {
       model: `${model.provider}/${model.model}`,
