@@ -60,6 +60,66 @@ describe("loadSettings", () => {
     expect(settings.models[0].provider).toBe("google-antigravity");
   });
 
+  it("loads debugCompactions from settings.json", () => {
+    const settingsContent = JSON.stringify({
+      models: [],
+      debugCompactions: true,
+    });
+    vi.mocked(fs.readFileSync).mockReturnValue(settingsContent);
+
+    const settings = loadSettings();
+
+    expect(settings.debugCompactions).toBeTruthy();
+  });
+
+  it("defaults debugCompactions to false", () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: [] }));
+
+    const settings = loadSettings();
+
+    expect(settings.debugCompactions).toBeFalsy();
+  });
+
+  it("defaults debugCompactions when not a boolean", () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ models: [], debugCompactions: "yes" })
+    );
+
+    const settings = loadSettings();
+
+    expect(settings.debugCompactions).toBeFalsy();
+  });
+
+  it("loads minSummaryChars from settings.json", () => {
+    const settingsContent = JSON.stringify({
+      models: [],
+      minSummaryChars: 200,
+    });
+    vi.mocked(fs.readFileSync).mockReturnValue(settingsContent);
+
+    const settings = loadSettings();
+
+    expect(settings.minSummaryChars).toBe(200);
+  });
+
+  it("defaults minSummaryChars to 100", () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: [] }));
+
+    const settings = loadSettings();
+
+    expect(settings.minSummaryChars).toBe(100);
+  });
+
+  it("defaults minSummaryChars when not a positive number", () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify({ models: [], minSummaryChars: -5 })
+    );
+
+    const settings = loadSettings();
+
+    expect(settings.minSummaryChars).toBe(100);
+  });
+
   it("reads from the correct relative path", () => {
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ models: [] }));
 

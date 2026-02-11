@@ -14,6 +14,8 @@ export interface ModelConfig {
 
 export interface OmniCompactSettings {
   models: ModelConfig[];
+  debugCompactions: boolean;
+  minSummaryChars: number;
 }
 
 const DEFAULT_SETTINGS: OmniCompactSettings = {
@@ -25,6 +27,8 @@ const DEFAULT_SETTINGS: OmniCompactSettings = {
       thinking: "high",
     },
   ],
+  debugCompactions: false,
+  minSummaryChars: 100,
 };
 
 /**
@@ -42,6 +46,14 @@ export function loadSettings(): OmniCompactSettings {
       models: Array.isArray(parsed.models)
         ? parsed.models
         : DEFAULT_SETTINGS.models,
+      debugCompactions:
+        typeof parsed.debugCompactions === "boolean"
+          ? parsed.debugCompactions
+          : DEFAULT_SETTINGS.debugCompactions,
+      minSummaryChars:
+        typeof parsed.minSummaryChars === "number" && parsed.minSummaryChars > 0
+          ? parsed.minSummaryChars
+          : DEFAULT_SETTINGS.minSummaryChars,
     };
   } catch {
     return DEFAULT_SETTINGS;

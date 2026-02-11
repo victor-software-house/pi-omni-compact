@@ -123,6 +123,54 @@ describe("branch summarization system prompt", () => {
   });
 });
 
+describe("accuracy rules", () => {
+  it("all three prompts contain session type detection rule", () => {
+    const rule = "Session type detection";
+    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
+    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+  });
+
+  it("all three prompts contain done vs in progress rule", () => {
+    const rule = "Done vs In Progress";
+    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
+    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+  });
+
+  it("all three prompts contain file modifications rule", () => {
+    const rule = "File modifications";
+    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
+    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+  });
+
+  it("all three prompts contain exact names rule", () => {
+    const rule = "Exact names";
+    expect(COMPACTION_SYSTEM_PROMPT).toContain(rule);
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(rule);
+    expect(BRANCH_SUMMARIZATION_SYSTEM_PROMPT).toContain(rule);
+  });
+});
+
+describe("user compaction note", () => {
+  it("compaction prompts mention user-compaction-note", () => {
+    expect(COMPACTION_SYSTEM_PROMPT).toContain("<user-compaction-note>");
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
+      "<user-compaction-note>"
+    );
+  });
+
+  it("instructs not to treat note as main goal", () => {
+    expect(COMPACTION_SYSTEM_PROMPT).toContain(
+      "do NOT treat it as the session's main goal"
+    );
+    expect(COMPACTION_INCREMENTAL_SYSTEM_PROMPT).toContain(
+      "do NOT treat it as the session's main goal"
+    );
+  });
+});
+
 describe("prompt distinctness", () => {
   it("initial and incremental prompts are different", () => {
     expect(COMPACTION_SYSTEM_PROMPT).not.toBe(

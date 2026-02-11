@@ -8,6 +8,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
+import { saveCompactionDebug } from "./debug.js";
 import { resolveModel } from "./models.js";
 import {
   BRANCH_SUMMARIZATION_SYSTEM_PROMPT,
@@ -40,13 +41,23 @@ export default function (pi: ExtensionAPI) {
       "info"
     );
 
-    // Serialize event data
-    const input = serializeCompactionInput(event.preparation);
+    // Serialize event data (including customInstructions if present)
+    const input = serializeCompactionInput({
+      ...event.preparation,
+      customInstructions: event.customInstructions,
+    });
 
     // Pick system prompt variant
     const systemPrompt = event.preparation.previousSummary
       ? COMPACTION_INCREMENTAL_SYSTEM_PROMPT
       : COMPACTION_SYSTEM_PROMPT;
+
+    const debugBase = {
+      model: `${model.provider}/${model.model}`,
+      input,
+      systemPrompt,
+      timestamp: new Date().toISOString(),
+    };
 
     try {
       const summary = await runSummarizationAgent(
@@ -57,15 +68,28 @@ export default function (pi: ExtensionAPI) {
         ctx.cwd
       );
 
-      if (!summary) {
+      if (!summary || summary.length < settings.minSummaryChars) {
         if (!event.signal.aborted) {
+          const reason = summary
+            ? `summary too short (${summary.length} chars, minimum ${settings.minSummaryChars})`
+            : "subprocess returned empty output";
           ctx.ui.notify(
-            "omni-compact: subprocess returned empty output, using default compaction",
+            `omni-compact: ${reason}, using default compaction`,
             "warning"
           );
+          saveCompactionDebug(settings.debugCompactions, {
+            ...debugBase,
+            output: summary,
+            error: reason,
+          });
         }
         return undefined;
       }
+
+      saveCompactionDebug(settings.debugCompactions, {
+        ...debugBase,
+        output: summary,
+      });
 
       return {
         compaction: {
@@ -80,6 +104,10 @@ export default function (pi: ExtensionAPI) {
         `omni-compact: compaction failed (${message}), using default`,
         "error"
       );
+      saveCompactionDebug(settings.debugCompactions, {
+        ...debugBase,
+        error: message,
+      });
       return undefined;
     }
   });
@@ -110,6 +138,13 @@ export default function (pi: ExtensionAPI) {
     // Serialize branch entries
     const input = serializeBranchInput(event.preparation.entriesToSummarize);
 
+    const debugBase = {
+      model: `${model.provider}/${model.model}`,
+      input,
+      systemPrompt: BRANCH_SUMMARIZATION_SYSTEM_PROMPT,
+      timestamp: new Date().toISOString(),
+    };
+
     try {
       const summary = await runSummarizationAgent(
         input,
@@ -119,15 +154,28 @@ export default function (pi: ExtensionAPI) {
         ctx.cwd
       );
 
-      if (!summary) {
+      if (!summary || summary.length < settings.minSummaryChars) {
         if (!event.signal.aborted) {
+          const reason = summary
+            ? `summary too short (${summary.length} chars, minimum ${settings.minSummaryChars})`
+            : "subprocess returned empty output";
           ctx.ui.notify(
-            "omni-compact: subprocess returned empty output, using default summarization",
+            `omni-compact: ${reason}, using default summarization`,
             "warning"
           );
+          saveCompactionDebug(settings.debugCompactions, {
+            ...debugBase,
+            output: summary,
+            error: reason,
+          });
         }
         return undefined;
       }
+
+      saveCompactionDebug(settings.debugCompactions, {
+        ...debugBase,
+        output: summary,
+      });
 
       return {
         summary: {
@@ -140,6 +188,10 @@ export default function (pi: ExtensionAPI) {
         `omni-compact: branch summary failed (${message}), using default`,
         "error"
       );
+      saveCompactionDebug(settings.debugCompactions, {
+        ...debugBase,
+        error: message,
+      });
       return undefined;
     }
   });

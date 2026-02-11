@@ -5,6 +5,23 @@
  * and one for branch summarization.
  */
 
+const ACCURACY_RULES = `## Accuracy Rules
+
+1. **Session type detection**: If the conversation only contains
+   read/grep/find/ls tool calls with no write/edit calls, this is a
+   code review or exploration session — do NOT claim files were modified.
+
+2. **Done vs In Progress**: Check the final user messages for complaints
+   ("doesn't work", "still broken", "wrong", "bug"). If the user
+   reported issues after a change, mark it In Progress, not Done.
+
+3. **File modifications**: Only list a file as modified if a write or
+   edit tool call succeeded. Do not infer modifications from discussion
+   alone.
+
+4. **Exact names**: Use exact variable, function, and file names from
+   the conversation. Do not paraphrase identifiers.`;
+
 const ENHANCED_FORMAT = `Use this format:
 
 ## Goal
@@ -77,6 +94,7 @@ CRITICAL RULES:
 - Use active voice and concrete language.
 - Preserve exact file paths, function names, error messages, and version numbers.
 - Include read-files and modified-files tags at the end listing all files read and modified during the session.
+- If a <user-compaction-note> section is present in the input, use it to guide what you focus on, but do NOT treat it as the session's main goal (use the first user request for that).
 
 PRESERVATION PRIORITIES (in order):
 1. Original user request - MUST capture the initial goal verbatim
@@ -84,6 +102,8 @@ PRESERVATION PRIORITIES (in order):
 3. Specific values - Counts, percentages, config settings, exact numbers
 4. Decision rationale - Not just what was decided, but WHY
 5. File changes - What was modified, created, or deleted
+
+${ACCURACY_RULES}
 
 ${ENHANCED_FORMAT}`;
 
@@ -104,12 +124,15 @@ CRITICAL RULES:
 - Use active voice and concrete language.
 - Preserve exact file paths, function names, error messages, and version numbers.
 - Do NOT continue the conversation. ONLY output the structured summary.
+- If a <user-compaction-note> section is present in the input, use it to guide what you focus on, but do NOT treat it as the session's main goal.
 
 MERGE PRIORITIES:
 1. Keep the original user request from the previous summary
 2. Add ALL new pending work to Remaining Work - do not drop incomplete tasks
 3. Capture specific values from new messages (counts, settings, numbers)
 4. Add decision rationale for any new choices made
+
+${ACCURACY_RULES}
 
 ${ENHANCED_FORMAT}`;
 
@@ -132,5 +155,7 @@ Rules:
 - Preserve exact file paths, function names, and error messages.
 - Use active voice and concrete language.
 - Capture specific values: counts, percentages, configuration settings.
+
+${ACCURACY_RULES}
 
 ${ENHANCED_FORMAT}`;

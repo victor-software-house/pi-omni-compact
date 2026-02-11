@@ -149,6 +149,31 @@ describe("serializeCompactionInput", () => {
 
     expect(output).toContain("edited: src/config.ts, src/utils.ts");
   });
+
+  it("includes user compaction note when customInstructions present", () => {
+    const prep = createPreparation({
+      customInstructions: "Focus on the Redis integration details",
+    });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).toContain("<user-compaction-note>");
+    expect(output).toContain("Focus on the Redis integration details");
+    expect(output).toContain("</user-compaction-note>");
+  });
+
+  it("omits user compaction note when customInstructions absent", () => {
+    const prep = createPreparation({ customInstructions: undefined });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).not.toContain("<user-compaction-note>");
+  });
+
+  it("omits user compaction note when customInstructions is whitespace", () => {
+    const prep = createPreparation({ customInstructions: "   " });
+    const output = serializeCompactionInput(prep);
+
+    expect(output).not.toContain("<user-compaction-note>");
+  });
 });
 
 describe("serializeBranchInput", () => {

@@ -22,6 +22,7 @@ interface CompactionInput {
   tokensBefore: number;
   previousSummary?: string;
   fileOps: FileOperations;
+  customInstructions?: string;
 }
 
 /**
@@ -94,6 +95,7 @@ export function serializeCompactionInput(preparation: CompactionInput): string {
     tokensBefore,
     previousSummary,
     fileOps,
+    customInstructions,
   } = preparation;
 
   const sections: string[] = [];
@@ -126,6 +128,13 @@ export function serializeCompactionInput(preparation: CompactionInput): string {
   if (previousSummary) {
     sections.push(
       `<previous-summary>\n${previousSummary}\n</previous-summary>`
+    );
+  }
+
+  // User compaction note (from /compact <text>)
+  if (customInstructions?.trim()) {
+    sections.push(
+      `<user-compaction-note>\n${customInstructions.trim()}\n</user-compaction-note>`
     );
   }
 
