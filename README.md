@@ -1,17 +1,31 @@
 # pi-omni-compact
 
-A [pi](https://github.com/mariozechner/pi) extension that replaces the default context compaction with a large-context model subprocess. Instead of summarizing with the active conversation model, it spawns a separate pi instance using a 1M-token Gemini model that can read the entire conversation at once.
+![pi-omni-compact banner](assets/banner.png)
+
+A [pi](https://github.com/mariozechner/pi) extension that replaces default context compaction with a large-context model subprocess. Pi normally summarizes with the active conversation model. This extension spawns a separate pi instance using a 1M-token Gemini model that reads the entire conversation at once, producing higher-fidelity summaries.
+
+## Requirements
+
+- [pi](https://github.com/mariozechner/pi) installed
+- A Gemini API key configured in pi's model registry
+- Node.js
 
 ## How it works
 
-When pi needs to compact conversation history or summarize an abandoned branch, this extension intercepts the event and:
+The extension hooks two pi events:
 
-1. Serializes the full conversation into a hybrid text format
-2. Resolves a configured model with a valid API key
-3. Spawns a pi subprocess with read-only tools (`read`, `grep`, `find`, `ls`) and an optional [pi-read-map](https://github.com/ArekSredzki/pi-read-map) extension
-4. The subprocess reads the conversation and referenced source files, then returns a structured summary
+- **`session_before_compact`** — fires when the context window fills up and pi needs to summarize conversation history
+- **`session_before_tree`** — fires when the user abandons a conversation branch and pi needs to preserve what happened
 
-On any failure — no API key, subprocess crash, empty output — the extension returns `undefined` and pi falls back to its default compaction.
+For both events, the extension:
+
+1. Analyzes the full session for structural metadata — tool usage patterns, friction signals (error loops, rephrasing cascades), file operations, and session boundaries
+2. Serializes the conversation and metadata into a hybrid text format
+3. Resolves the first configured model with a valid API key
+4. Spawns a pi subprocess with read-only tools (`read`, `grep`, `find`, `ls`) and an optional [pi-read-map](https://github.com/Whamp/pi-read-map) extension (provides structural file maps so the summarizer can navigate the codebase faster)
+5. The subprocess reads the conversation and referenced source files, then returns a structured summary
+
+On any failure — no API key, subprocess crash, output too short — the extension returns `undefined` and pi falls back to its default compaction.
 
 ## Summary format
 
@@ -20,8 +34,11 @@ The output follows a fixed structure:
 - **Goal** — the original user request, quoted verbatim
 - **Constraints & Preferences** — requirements and style decisions
 - **Progress** — done, in progress, blocked
-- **Key Decisions** — what was decided, why, and what alternatives were rejected
+- **Key Decisions** — what was decided, why, and alternatives rejected
 - **File Changes** — paths and what changed
+- **Code Patterns Established** — conventions and architectural choices the codebase follows
+- **Implicit Dependencies** — environment variables, config, non-obvious coupling
+- **Open Questions** — deferred decisions, unresolved issues
 - **Error History** — errors encountered and fixes applied
 - **Remaining Work** — unfinished tasks
 - **Next Steps** — ordered list of recommended actions
@@ -66,7 +83,7 @@ API keys are resolved through pi's model registry — no separate key configurat
 
 ## Benchmark results
 
-Evaluated against 14 real coding sessions (25k–165k tokens) using [pi-compression-benchmark](../pi-compression-benchmark/) with probe-response scoring:
+Evaluated against 14 real coding sessions (25k–165k tokens) using [pi-compression-benchmark](https://github.com/Whamp/pi-compression-benchmark) with probe-response scoring:
 
 | Strategy | Avg Score | Min | Max |
 |----------|-----------|-----|-----|
@@ -80,7 +97,7 @@ Strongest on sessions with concrete implementation work. Weakest on pure explora
 
 ```bash
 npm run validate   # typecheck + lint + format check
-npm test           # unit + integration tests (103 tests)
+npm test           # unit + integration tests
 npm run test:e2e   # end-to-end tests (requires real Gemini API key)
 npm run build      # compile to dist/
 ```
@@ -89,13 +106,14 @@ npm run build      # compile to dist/
 
 ```
 src/
-  index.ts        Event handlers for session_before_compact, session_before_tree
-  models.ts       Resolve first configured model with valid API key
-  serializer.ts   Convert pi messages to LLM input format
-  prompts.ts      System prompts (initial, incremental, branch)
-  subprocess.ts   Spawn pi subprocess, parse JSON event stream
-  settings.ts     Load and validate settings.json
-  debug.ts        Save compaction input/output as debug artifacts
+  index.ts              Event handlers for session_before_compact, session_before_tree
+  models.ts             Resolve first configured model with valid API key
+  serializer.ts         Convert pi messages to LLM input format
+  session-analysis.ts   Extract structural metadata (friction, boundaries, file ops)
+  prompts.ts            System prompts (initial, incremental, branch)
+  subprocess.ts         Spawn pi subprocess, parse JSON event stream
+  settings.ts           Load and validate settings.json
+  debug.ts              Save compaction input/output as debug artifacts
 ```
 
 ## License

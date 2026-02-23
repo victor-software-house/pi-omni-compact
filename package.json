@@ -21,8 +21,8 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "build": "tsc"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["pi", "extension", "compaction", "context", "gemini"],
+  "author": "Will Hampson",
   "license": "MIT",
   "type": "module",
   "devDependencies": {
