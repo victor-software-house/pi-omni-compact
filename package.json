@@ -4,12 +4,21 @@
   "description": "Pi extension that delegates compaction to a large-context model subprocess",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "settings.json",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
   "pi": {
     "extensions": [
       "./src/index.ts"
     ]
   },
   "scripts": {
+    "prepublishOnly": "npm run validate && npm run build",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint -c .oxlintrc.json src tests",
     "lint:fix": "oxlint -c .oxlintrc.json src tests --fix",
