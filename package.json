@@ -1,6 +1,6 @@
 {
   "name": "pi-omni-compact",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension that delegates compaction to a large-context model subprocess",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -30,21 +30,37 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "build": "tsc"
   },
-  "keywords": ["pi", "extension", "compaction", "context", "gemini"],
+  "keywords": [
+    "pi",
+    "pi-package",
+    "extension",
+    "compaction",
+    "context",
+    "gemini"
+  ],
   "author": "Will Hampson",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Whamp/pi-omni-compact.git"
+  },
+  "homepage": "https://github.com/Whamp/pi-omni-compact#readme",
+  "bugs": {
+    "url": "https://github.com/Whamp/pi-omni-compact/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
-    "@factory/eslint-plugin": "^0.1.0",
     "@types/node": "^25.2.2",
     "oxfmt": "^0.28.0",
     "oxlint": "^1.43.0",
     "typescript": "^5.9.3",
-    "ultracite": "^7.1.5",
     "vitest": "^4.0.18"
   },
-  "dependencies": {
-    "@mariozechner/pi-agent-core": "^0.52.9",
-    "@mariozechner/pi-coding-agent": "^0.52.9"
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-coding-agent": "*"
   }
 }
