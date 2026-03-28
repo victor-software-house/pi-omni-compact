@@ -26,7 +26,23 @@ pi install git:github.com/Whamp/pi-omni-compact
 
 ## Configuration
 
-Edit `settings.json` in the extension directory to configure which models to try. The extension uses the first model with a valid API key:
+Use `/omni-compact` inside Pi to open the interactive settings panel. The panel reads your live Pi model registry, lets you pick prioritized model fallbacks, and writes config to:
+
+```text
+~/.pi/agent/pi-omni-compact.json
+```
+
+Companion commands:
+
+- `/omni-compact show` — print the current config
+- `/omni-compact verify` — verify that at least one configured model has auth
+- `/omni-compact path` — print the config path
+- `/omni-compact reset` — restore defaults
+- `/omni-compact help` — print usage
+
+The extension still falls back to the legacy package-adjacent `settings.json` for backward compatibility, but the TUI panel always writes the durable user config path above.
+
+Equivalent JSON:
 
 ```json
 {
@@ -39,7 +55,7 @@ Edit `settings.json` in the extension directory to configure which models to try
 }
 ```
 
-**You will need to update the `models` array** to match a provider and model available in your pi setup. A model with a 1M+ token context window is highly recommended — the whole point is reading the full conversation at once.
+Pick models that exist in your Pi setup. A model with a 1M+ token context window is highly recommended — the whole point is reading the full conversation at once.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -113,12 +129,15 @@ npm run build      # compile to dist/
 ```
 src/
   index.ts              Event handlers for session_before_compact, session_before_tree
+  config-command.ts     /omni-compact command family
+  config-controller.ts  Settings persistence + runtime verification
+  config-modal.ts       Interactive TUI settings panel
   models.ts             Resolve first configured model with valid API key
   serializer.ts         Convert pi messages to LLM input format
   session-analysis.ts   Extract structural metadata (friction, boundaries, file ops)
   prompts.ts            System prompts (initial, incremental, branch)
   subprocess.ts         Spawn pi subprocess, parse JSON event stream
-  settings.ts           Load and validate settings.json
+  settings.ts           Load, normalize, and persist settings
   debug.ts              Save compaction input/output as debug artifacts
 ```
 

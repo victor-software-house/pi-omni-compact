@@ -38,19 +38,25 @@ describe("extension loading", () => {
     expect(mockPi.on).toHaveBeenCalledTimes(2);
   });
 
+  it("registers the omni-compact command", () => {
+    const mockPi = createMockPi();
+
+    piOmniCompact(mockPi as never);
+
+    expect(mockPi.registerCommand).toHaveBeenCalledWith(
+      "omni-compact",
+      expect.objectContaining({
+        description: expect.stringContaining("configure"),
+        handler: expect.any(Function),
+      })
+    );
+  });
+
   it("does not register any tools", () => {
     const mockPi = createMockPi();
 
     piOmniCompact(mockPi as never);
 
     expect(mockPi.registerTool).not.toHaveBeenCalled();
-  });
-
-  it("does not register any commands", () => {
-    const mockPi = createMockPi();
-
-    piOmniCompact(mockPi as never);
-
-    expect(mockPi.registerCommand).not.toHaveBeenCalled();
   });
 });

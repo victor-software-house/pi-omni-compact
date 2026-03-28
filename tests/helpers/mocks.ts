@@ -10,6 +10,7 @@ export function createMockUI() {
     select: vi.fn(),
     confirm: vi.fn(),
     input: vi.fn(),
+    custom: vi.fn(),
     setStatus: vi.fn(),
     setWorkingMessage: vi.fn(),
     setWidget: vi.fn(),
@@ -19,7 +20,10 @@ export function createMockUI() {
 export function createMockModelRegistry() {
   return {
     find: vi.fn(),
+    getAll: vi.fn().mockReturnValue([]),
+    getAvailable: vi.fn().mockReturnValue([]),
     getApiKey: vi.fn(),
+    getError: vi.fn(),
   };
 }
 

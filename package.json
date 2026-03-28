@@ -52,6 +52,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
   "devDependencies": {
     "@types/node": "^25.2.2",
     "oxfmt": "^0.28.0",
@@ -61,6 +64,7 @@
   },
   "peerDependencies": {
     "@mariozechner/pi-agent-core": "*",
-    "@mariozechner/pi-coding-agent": "*"
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
   }
 }

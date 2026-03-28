@@ -8,6 +8,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
+import { registerOmniCompactCommand } from "./config-command.js";
 import { saveCompactionDebug } from "./debug.js";
 import { resolveModel } from "./models.js";
 import {
@@ -24,6 +25,8 @@ import { loadSettings } from "./settings.js";
 import { runSummarizationAgent } from "./subprocess.js";
 
 export default function (pi: ExtensionAPI) {
+  registerOmniCompactCommand(pi);
+
   pi.on("session_before_compact", async (event, ctx) => {
     const settings = loadSettings();
 
