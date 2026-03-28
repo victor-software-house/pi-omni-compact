@@ -26,7 +26,7 @@ pi install git:github.com/Whamp/pi-omni-compact
 
 ## Configuration
 
-Use `/omni-compact` inside Pi to open the interactive settings panel. The panel reads your live Pi model registry, lets you pick prioritized model fallbacks, and writes config to:
+Use `/omni-compact` inside Pi to open the interactive settings panel. Model selection uses Pi's interactive list selector and only shows models from Pi's current available/scoped model set, not the full registry. The panel writes config to:
 
 ```text
 ~/.pi/agent/pi-omni-compact.json

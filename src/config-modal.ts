@@ -1,13 +1,4 @@
-import {
-  getSettingsListTheme,
-  type ExtensionCommandContext,
-} from "@mariozechner/pi-coding-agent";
-import {
-  Container,
-  SettingsList,
-  Text,
-  type SettingItem,
-} from "@mariozechner/pi-tui";
+import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 
 import {
   type OmniCompactController,
@@ -34,6 +25,16 @@ const MIN_SUMMARY_CHAR_OPTIONS = [
   "1200",
 ];
 const DEFAULT_THINKING_VALUE = THINKING_LEVELS[4];
+
+interface SelectorOption {
+  value: string;
+  label: string;
+}
+
+interface MenuAction {
+  id: string;
+  label: string;
+}
 
 function cloneModel(model: ModelConfig): ModelConfig {
   return {
@@ -90,31 +91,6 @@ function getModelSlots(
   });
 }
 
-function buildModelValues(
-  config: OmniCompactSettings,
-  runtimeStatus: OmniCompactRuntimeStatus
-): string[] {
-  const values = [EMPTY_MODEL_VALUE];
-  const seen = new Set(values);
-
-  for (const model of config.models) {
-    const modelValue = toModelValue(model);
-    if (!seen.has(modelValue)) {
-      seen.add(modelValue);
-      values.push(modelValue);
-    }
-  }
-
-  for (const option of runtimeStatus.modelOptions) {
-    if (!seen.has(option.value)) {
-      seen.add(option.value);
-      values.push(option.value);
-    }
-  }
-
-  return values;
-}
-
 function getSlotLabel(index: number): string {
   if (index === 0) {
     return "Primary model";
@@ -133,16 +109,8 @@ function getThinkingLabel(index: number): string {
 
 function buildModelDescription(
   index: number,
-  slots: Array<ModelConfig | undefined>,
   runtimeStatus: OmniCompactRuntimeStatus
 ): string {
-  const selectedModel = slots[index];
-  if (!selectedModel) {
-    return index === 0
-      ? "First configured model with auth wins. Choose the main large-context model here."
-      : "Optional fallback. Pi tries later slots only when earlier models are unavailable.";
-  }
-
   const currentStatus = runtimeStatus.configuredModels.find(
     (model) => model.index === index
   );
@@ -151,7 +119,9 @@ function buildModelDescription(
     return currentStatus.description;
   }
 
-  return "Selected model status is unknown.";
+  return index === 0
+    ? "Choose the main large-context model. The first configured model with auth wins."
+    : "Optional fallback. Pi tries later slots only when earlier models are unavailable.";
 }
 
 function buildThinkingDescription(
@@ -163,247 +133,297 @@ function buildThinkingDescription(
     return "Select a model first. The thinking level is stored per slot.";
   }
 
-  return `${toModelValue(selectedModel)} will run with ${selectedModel.thinking} reasoning.`;
+  return `${toModelValue(selectedModel)} runs with ${selectedModel.thinking} reasoning.`;
 }
 
-function buildDebugDescription(debugCompactions: boolean): string {
-  return debugCompactions
-    ? "Save compaction input and output JSON for debugging."
-    : "Do not persist debug artifacts.";
+function buildPanelTitle(runtimeStatus: OmniCompactRuntimeStatus): string {
+  if (runtimeStatus.usingScopedModels) {
+    return `Omni Compact Settings (${runtimeStatus.modelOptions.length} scoped Pi models)`;
+  }
+
+  return `Omni Compact Settings (${runtimeStatus.modelOptions.length} available Pi models)`;
 }
 
-function buildMinSummaryDescription(minSummaryChars: number): string {
-  return `Summaries shorter than ${minSummaryChars} characters fall back to Pi's default compaction.`;
-}
-
-function buildSettingItems(
+function buildMenuActions(
   config: OmniCompactSettings,
   runtimeStatus: OmniCompactRuntimeStatus,
   slotCount: number
-): SettingItem[] {
+): MenuAction[] {
   const slots = getModelSlots(config, slotCount);
-  const modelValues = buildModelValues(config, runtimeStatus);
-  const minSummaryValues = [...MIN_SUMMARY_CHAR_OPTIONS];
-  const currentMinSummary = String(config.minSummaryChars);
-
-  if (!minSummaryValues.includes(currentMinSummary)) {
-    minSummaryValues.push(currentMinSummary);
-  }
-
-  const items: SettingItem[] = [];
+  const actions: MenuAction[] = [];
 
   for (let index = 0; index < slotCount; index += 1) {
     const selectedModel = slots[index];
 
-    items.push({
+    actions.push({
       id: `model:${index}`,
-      label: getSlotLabel(index),
-      description: buildModelDescription(index, slots, runtimeStatus),
-      currentValue: selectedModel
-        ? toModelValue(selectedModel)
-        : EMPTY_MODEL_VALUE,
-      values: modelValues,
+      label: `${getSlotLabel(index)}: ${selectedModel ? toModelValue(selectedModel) : EMPTY_MODEL_VALUE}`,
     });
 
-    items.push({
+    actions.push({
       id: `thinking:${index}`,
-      label: getThinkingLabel(index),
-      description: buildThinkingDescription(index, slots),
-      currentValue: selectedModel?.thinking ?? DEFAULT_THINKING_VALUE,
-      values: [...THINKING_LEVELS],
+      label: `${getThinkingLabel(index)}: ${selectedModel?.thinking ?? DEFAULT_THINKING_VALUE}`,
     });
   }
 
-  items.push({
+  actions.push({
     id: "debugCompactions",
-    label: "Debug artifacts",
-    description: buildDebugDescription(config.debugCompactions),
-    currentValue: config.debugCompactions ? "on" : "off",
-    values: ["on", "off"],
+    label: `Debug artifacts: ${config.debugCompactions ? "on" : "off"}`,
   });
-
-  items.push({
+  actions.push({
     id: "minSummaryChars",
-    label: "Minimum summary length",
-    description: buildMinSummaryDescription(config.minSummaryChars),
-    currentValue: currentMinSummary,
-    values: minSummaryValues,
+    label: `Minimum summary length: ${config.minSummaryChars}`,
   });
 
-  return items;
+  if (runtimeStatus.scopePatterns && runtimeStatus.scopePatterns.length > 0) {
+    actions.push({
+      id: "scopeInfo",
+      label: `Scoped Pi models: ${runtimeStatus.scopePatterns.join(", ")}`,
+    });
+  }
+
+  return actions;
 }
 
-function syncSettingItems(
-  items: SettingItem[],
-  config: OmniCompactSettings,
-  runtimeStatus: OmniCompactRuntimeStatus,
-  slotCount: number
-): void {
-  const slots = getModelSlots(config, slotCount);
+function buildModelSelectorOptions(
+  currentModel: ModelConfig | undefined,
+  runtimeStatus: OmniCompactRuntimeStatus
+): SelectorOption[] {
+  const options: SelectorOption[] = [
+    {
+      value: EMPTY_MODEL_VALUE,
+      label: "(none) — clear this slot",
+    },
+  ];
+  const seen = new Set(options.map((option) => option.value));
 
-  for (const item of items) {
-    if (item.id.startsWith("model:")) {
-      const index = Number(item.id.slice("model:".length));
-      const selectedModel = slots[index];
+  if (currentModel) {
+    const currentValue = toModelValue(currentModel);
+    const currentOption = runtimeStatus.modelOptions.find(
+      (option) => option.value === currentValue
+    );
 
-      item.description = buildModelDescription(index, slots, runtimeStatus);
-      item.currentValue = selectedModel
-        ? toModelValue(selectedModel)
-        : EMPTY_MODEL_VALUE;
-      continue;
-    }
-
-    if (item.id.startsWith("thinking:")) {
-      const index = Number(item.id.slice("thinking:".length));
-      item.description = buildThinkingDescription(index, slots);
-      item.currentValue = slots[index]?.thinking ?? DEFAULT_THINKING_VALUE;
-      continue;
-    }
-
-    if (item.id === "debugCompactions") {
-      item.description = buildDebugDescription(config.debugCompactions);
-      item.currentValue = config.debugCompactions ? "on" : "off";
-      continue;
-    }
-
-    if (item.id === "minSummaryChars") {
-      item.description = buildMinSummaryDescription(config.minSummaryChars);
-      item.currentValue = String(config.minSummaryChars);
+    if (!seen.has(currentValue) && !currentOption) {
+      seen.add(currentValue);
+      options.push({
+        value: currentValue,
+        label: `${currentValue} — currently configured outside the visible Pi model list`,
+      });
     }
   }
+
+  for (const option of runtimeStatus.modelOptions) {
+    if (!seen.has(option.value)) {
+      seen.add(option.value);
+      options.push({
+        value: option.value,
+        label: `${option.label} — ${option.description}`,
+      });
+    }
+  }
+
+  return options;
 }
 
-function applySetting(
+function buildSimpleSelectorOptions(values: string[]): SelectorOption[] {
+  return values.map((value) => ({
+    value,
+    label: value,
+  }));
+}
+
+async function showSelector(
+  ctx: ExtensionCommandContext,
+  title: string,
+  options: SelectorOption[]
+): Promise<string | undefined> {
+  const selectedLabel = await ctx.ui.select(
+    title,
+    options.map((option) => option.label)
+  );
+  if (!selectedLabel) {
+    return undefined;
+  }
+
+  const selectedOption = options.find(
+    (option) => option.label === selectedLabel
+  );
+  return selectedOption?.value;
+}
+
+function applyModelSelection(
   config: OmniCompactSettings,
-  id: string,
+  index: number,
   value: string,
   slotCount: number
 ): OmniCompactSettings {
   const slots = getModelSlots(config, slotCount);
 
-  if (id.startsWith("model:")) {
-    const index = Number(id.slice("model:".length));
-    if (value === EMPTY_MODEL_VALUE) {
-      slots[index] = undefined;
-    } else {
-      const parsedModel = parseModelValue(value);
-      if (!parsedModel) {
-        return config;
-      }
-
-      slots[index] = {
-        provider: parsedModel.provider,
-        id: parsedModel.id,
-        thinking: slots[index]?.thinking ?? DEFAULT_THINKING_VALUE,
-      };
-    }
-
-    return {
-      ...config,
-      models: slots.filter(isDefinedModelConfig),
-    };
-  }
-
-  if (id.startsWith("thinking:")) {
-    const index = Number(id.slice("thinking:".length));
-    const slot = slots[index];
-    const nextThinking = parseThinkingValue(value);
-    if (!slot) {
-      return config;
-    }
-    if (!nextThinking) {
+  if (value === EMPTY_MODEL_VALUE) {
+    slots[index] = undefined;
+  } else {
+    const selectedModel = parseModelValue(value);
+    if (!selectedModel) {
       return config;
     }
 
     slots[index] = {
-      ...slot,
-      thinking: nextThinking,
-    };
-
-    return {
-      ...config,
-      models: slots.filter(isDefinedModelConfig),
+      provider: selectedModel.provider,
+      id: selectedModel.id,
+      thinking: slots[index]?.thinking ?? DEFAULT_THINKING_VALUE,
     };
   }
 
-  if (id === "debugCompactions") {
-    return {
-      ...config,
-      debugCompactions: value === "on",
-    };
+  return {
+    ...config,
+    models: slots.filter(isDefinedModelConfig),
+  };
+}
+
+function applyThinkingSelection(
+  config: OmniCompactSettings,
+  index: number,
+  value: string,
+  slotCount: number
+): OmniCompactSettings {
+  const slots = getModelSlots(config, slotCount);
+  const selectedModel = slots[index];
+  const selectedThinking = parseThinkingValue(value);
+
+  if (!selectedModel || !selectedThinking) {
+    return config;
   }
 
-  if (id === "minSummaryChars") {
-    const nextMinSummary = Number(value);
-    if (!Number.isInteger(nextMinSummary) || nextMinSummary <= 0) {
-      return config;
-    }
+  slots[index] = {
+    ...selectedModel,
+    thinking: selectedThinking,
+  };
 
-    return {
-      ...config,
-      minSummaryChars: nextMinSummary,
-    };
+  return {
+    ...config,
+    models: slots.filter(isDefinedModelConfig),
+  };
+}
+
+function applyMinSummarySelection(
+  config: OmniCompactSettings,
+  value: string
+): OmniCompactSettings {
+  const minSummaryChars = Number(value);
+  if (!Number.isInteger(minSummaryChars) || minSummaryChars <= 0) {
+    return config;
   }
 
-  return config;
+  return {
+    ...config,
+    minSummaryChars,
+  };
 }
 
 export async function openOmniCompactSettingsModal(
   ctx: ExtensionCommandContext,
   controller: OmniCompactController
 ): Promise<void> {
-  let current = controller.getConfig();
-  let runtimeStatus = controller.refreshRuntimeStatus();
-  const slotCount = getSlotCount(current);
+  while (true) {
+    const current = controller.getConfig();
+    const runtimeStatus = controller.refreshRuntimeStatus();
+    const slotCount = getSlotCount(current);
+    const slots = getModelSlots(current, slotCount);
+    const menuActions = buildMenuActions(current, runtimeStatus, slotCount);
 
-  await ctx.ui.custom((tui, theme, _keybindings, done) => {
-    const container = new Container();
-    container.addChild(
-      new Text(theme.fg("accent", theme.bold("Omni Compact Settings")), 1, 0)
+    const selectedActionLabel = await ctx.ui.select(
+      buildPanelTitle(runtimeStatus),
+      menuActions.map((action) => action.label)
     );
-    container.addChild(
-      new Text(theme.fg("dim", controller.getConfigPath()), 1, 0)
-    );
+    if (!selectedActionLabel) {
+      return;
+    }
 
-    const items = buildSettingItems(current, runtimeStatus, slotCount);
-    const settingsList = new SettingsList(
-      items,
-      12,
-      getSettingsListTheme(),
-      (id, newValue) => {
-        current = applySetting(current, id, newValue, slotCount);
-        current = controller.setConfig(current);
-        runtimeStatus = controller.refreshRuntimeStatus();
-        syncSettingItems(items, current, runtimeStatus, slotCount);
-        tui.requestRender();
-      },
-      () => done(undefined),
-      { enableSearch: true }
+    const selectedAction = menuActions.find(
+      (action) => action.label === selectedActionLabel
     );
+    if (!selectedAction) {
+      return;
+    }
 
-    container.addChild(settingsList);
-    container.addChild(
-      new Text(
-        theme.fg(
-          "dim",
-          "Esc: close | Arrow keys: navigate | Space: cycle value | Type: search"
-        ),
-        1,
-        0
-      )
-    );
+    if (selectedAction.id === "scopeInfo") {
+      ctx.ui.notify(selectedAction.label, "info");
+      continue;
+    }
 
-    return {
-      render(width: number): string[] {
-        return container.render(width);
-      },
-      invalidate(): void {
-        container.invalidate();
-      },
-      handleInput(data: string): void {
-        settingsList.handleInput?.(data);
-        tui.requestRender();
-      },
-    };
-  });
+    if (selectedAction.id.startsWith("model:")) {
+      const index = Number(selectedAction.id.slice("model:".length));
+      const selectedValue = await showSelector(
+        ctx,
+        `${getSlotLabel(index)} — ${buildModelDescription(index, runtimeStatus)}`,
+        buildModelSelectorOptions(slots[index], runtimeStatus)
+      );
+      if (!selectedValue) {
+        continue;
+      }
+
+      controller.setConfig(
+        applyModelSelection(current, index, selectedValue, slotCount)
+      );
+      continue;
+    }
+
+    if (selectedAction.id.startsWith("thinking:")) {
+      const index = Number(selectedAction.id.slice("thinking:".length));
+      if (!slots[index]) {
+        ctx.ui.notify("Select a model first.", "warning");
+        continue;
+      }
+
+      const selectedThinking = await showSelector(
+        ctx,
+        `${getThinkingLabel(index)} — ${buildThinkingDescription(index, slots)}`,
+        buildSimpleSelectorOptions([...THINKING_LEVELS])
+      );
+      if (!selectedThinking) {
+        continue;
+      }
+
+      controller.setConfig(
+        applyThinkingSelection(current, index, selectedThinking, slotCount)
+      );
+      continue;
+    }
+
+    if (selectedAction.id === "debugCompactions") {
+      const selectedValue = await showSelector(
+        ctx,
+        "Debug artifacts",
+        buildSimpleSelectorOptions(["on", "off"])
+      );
+      if (!selectedValue) {
+        continue;
+      }
+
+      controller.setConfig({
+        ...current,
+        debugCompactions: selectedValue === "on",
+      });
+      continue;
+    }
+
+    if (selectedAction.id === "minSummaryChars") {
+      const optionValues = [...MIN_SUMMARY_CHAR_OPTIONS];
+      const currentValue = String(current.minSummaryChars);
+      if (!optionValues.includes(currentValue)) {
+        optionValues.push(currentValue);
+      }
+
+      const selectedValue = await showSelector(
+        ctx,
+        "Minimum summary length",
+        buildSimpleSelectorOptions(optionValues)
+      );
+      if (!selectedValue) {
+        continue;
+      }
+
+      controller.setConfig(applyMinSummarySelection(current, selectedValue));
+    }
+  }
 }

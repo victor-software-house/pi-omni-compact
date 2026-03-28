@@ -161,7 +161,10 @@ export function registerOmniCompactCommand(pi: ExtensionAPI): void {
     description: "Inspect and configure pi-omni-compact",
     getArgumentCompletions: getSubcommandCompletions,
     handler: async (args, ctx) => {
-      const controller = createOmniCompactController(ctx.modelRegistry);
+      const controller = createOmniCompactController(
+        ctx.modelRegistry,
+        ctx.cwd
+      );
 
       if (await handleArgs(args, ctx, controller)) {
         return;

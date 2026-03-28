@@ -1,6 +1,11 @@
-import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import {
+  SettingsManager,
+  getAgentDir,
+  type ModelRegistry,
+} from "@mariozechner/pi-coding-agent";
 
 import {
+  THINKING_LEVELS,
   getSettingsPath,
   loadSettings,
   resetSettings,
@@ -33,6 +38,8 @@ export interface OmniCompactRuntimeStatus {
   modelOptions: ModelOption[];
   configuredModels: ConfiguredModelStatus[];
   resolvedModel?: ConfiguredModelStatus;
+  scopePatterns?: string[];
+  usingScopedModels: boolean;
 }
 
 export interface OmniCompactController {
@@ -57,10 +64,6 @@ function formatContextWindow(contextWindow: number): string {
 }
 
 function compareModelOptions(left: ModelOption, right: ModelOption): number {
-  if (left.authConfigured !== right.authConfigured) {
-    return left.authConfigured ? -1 : 1;
-  }
-
   if (left.contextWindow !== right.contextWindow) {
     return right.contextWindow - left.contextWindow;
   }
@@ -74,37 +77,127 @@ function toModelOptionValue(
   return `${model.provider}/${model.id}`;
 }
 
-function buildModelOptions(modelRegistry: ModelRegistry): ModelOption[] {
-  const availableModels = new Set(
-    modelRegistry.getAvailable().map((model) => toModelOptionValue(model))
+function stripThinkingSuffix(pattern: string): string {
+  const lastColonIndex = pattern.lastIndexOf(":");
+  if (lastColonIndex < 0) {
+    return pattern;
+  }
+
+  const suffix = pattern.slice(lastColonIndex + 1);
+  const thinkingLevel = THINKING_LEVELS.find((level) => level === suffix);
+  if (!thinkingLevel) {
+    return pattern;
+  }
+
+  return pattern.slice(0, lastColonIndex);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesModelPattern(
+  pattern: string,
+  model: {
+    provider: string;
+    id: string;
+    name: string;
+  }
+): boolean {
+  const normalizedPattern = stripThinkingSuffix(pattern).trim().toLowerCase();
+  if (!normalizedPattern) {
+    return false;
+  }
+
+  const candidates = [
+    `${model.provider}/${model.id}`.toLowerCase(),
+    model.id.toLowerCase(),
+    model.name.toLowerCase(),
+  ];
+
+  if (normalizedPattern.includes("*")) {
+    const regex = new RegExp(
+      `^${escapeRegExp(normalizedPattern).replace(/\\\*/g, ".*")}$`,
+      "i"
+    );
+
+    return candidates.some((candidate) => regex.test(candidate));
+  }
+
+  return candidates.some(
+    (candidate) =>
+      candidate === normalizedPattern || candidate.includes(normalizedPattern)
   );
+}
 
-  return modelRegistry
-    .getAll()
-    .map((model) => {
-      const authConfigured = availableModels.has(toModelOptionValue(model));
+function getScopedModelPatterns(cwd: string): string[] | undefined {
+  const settingsManager = SettingsManager.create(cwd, getAgentDir());
+  const patterns = settingsManager.getEnabledModels();
 
-      return {
+  if (!patterns || patterns.length === 0) {
+    return undefined;
+  }
+
+  return patterns;
+}
+
+function buildScopedAvailableModels(modelRegistry: ModelRegistry, cwd: string) {
+  const availableModels = modelRegistry.getAvailable();
+  const scopePatterns = getScopedModelPatterns(cwd);
+
+  if (!scopePatterns) {
+    return {
+      availableModels,
+      scopePatterns: undefined,
+      usingScopedModels: false,
+    };
+  }
+
+  return {
+    availableModels: availableModels.filter((model) =>
+      scopePatterns.some((pattern) =>
+        matchesModelPattern(pattern, {
+          provider: model.provider,
+          id: model.id,
+          name: model.name,
+        })
+      )
+    ),
+    scopePatterns,
+    usingScopedModels: true,
+  };
+}
+
+function buildModelOptions(modelRegistry: ModelRegistry, cwd: string) {
+  const scopedModels = buildScopedAvailableModels(modelRegistry, cwd);
+
+  return {
+    modelOptions: scopedModels.availableModels
+      .map((model) => ({
         value: toModelOptionValue(model),
         label: toModelOptionValue(model),
-        description: `${formatContextWindow(model.contextWindow)} | ${authConfigured ? "auth configured" : "auth missing"}${model.reasoning ? " | reasoning" : ""}`,
+        description: `${model.name} | ${formatContextWindow(model.contextWindow)}${model.reasoning ? " | reasoning" : ""}`,
         provider: model.provider,
         id: model.id,
-        authConfigured,
+        authConfigured: true,
         contextWindow: model.contextWindow,
-      };
-    })
-    .sort(compareModelOptions);
+      }))
+      .sort(compareModelOptions),
+    scopePatterns: scopedModels.scopePatterns,
+    usingScopedModels: scopedModels.usingScopedModels,
+    availableModelValues: new Set(
+      scopedModels.availableModels.map((model) => toModelOptionValue(model))
+    ),
+  };
 }
 
 function buildConfiguredModelStatus(
   modelRegistry: ModelRegistry,
   config: OmniCompactSettings,
-  modelOptions: ModelOption[]
+  modelOptions: ModelOption[],
+  availableModelValues: Set<string>,
+  usingScopedModels: boolean
 ): ConfiguredModelStatus[] {
-  const availableModels = new Set(
-    modelRegistry.getAvailable().map((model) => toModelOptionValue(model))
-  );
   const optionByValue = new Map(
     modelOptions.map((option) => [option.value, option])
   );
@@ -112,6 +205,8 @@ function buildConfiguredModelStatus(
   return config.models.map((model, index) => {
     const value = toModelOptionValue(model);
     const knownOption = optionByValue.get(value);
+    const isInScopedList = availableModelValues.has(value);
+
     if (knownOption) {
       return {
         index,
@@ -136,14 +231,27 @@ function buildConfiguredModelStatus(
       };
     }
 
-    const authConfigured = availableModels.has(value);
+    const descriptionParts = [
+      registeredModel.name,
+      formatContextWindow(registeredModel.contextWindow),
+    ];
+    if (registeredModel.reasoning) {
+      descriptionParts.push("reasoning");
+    }
+    if (!isInScopedList) {
+      descriptionParts.push(
+        usingScopedModels
+          ? "outside current Pi scoped model list"
+          : "auth missing"
+      );
+    }
 
     return {
       index,
       value,
       label: value,
-      description: `${formatContextWindow(registeredModel.contextWindow)} | ${authConfigured ? "auth configured" : "auth missing"}${registeredModel.reasoning ? " | reasoning" : ""}`,
-      authConfigured,
+      description: descriptionParts.join(" | "),
+      authConfigured: isInScopedList,
       found: true,
     };
   });
@@ -151,27 +259,33 @@ function buildConfiguredModelStatus(
 
 function buildRuntimeStatus(
   modelRegistry: ModelRegistry,
+  cwd: string,
   config: OmniCompactSettings
 ): OmniCompactRuntimeStatus {
-  const modelOptions = buildModelOptions(modelRegistry);
+  const scopedModels = buildModelOptions(modelRegistry, cwd);
   const configuredModels = buildConfiguredModelStatus(
     modelRegistry,
     config,
-    modelOptions
+    scopedModels.modelOptions,
+    scopedModels.availableModelValues,
+    scopedModels.usingScopedModels
   );
 
   return {
     modelRegistryError: modelRegistry.getError(),
-    modelOptions,
+    modelOptions: scopedModels.modelOptions,
     configuredModels,
     resolvedModel: configuredModels.find((model) => model.authConfigured),
+    scopePatterns: scopedModels.scopePatterns,
+    usingScopedModels: scopedModels.usingScopedModels,
   };
 }
 
 export function createOmniCompactController(
-  modelRegistry: ModelRegistry
+  modelRegistry: ModelRegistry,
+  cwd: string
 ): OmniCompactController {
-  let runtimeStatus = buildRuntimeStatus(modelRegistry, loadSettings());
+  let runtimeStatus = buildRuntimeStatus(modelRegistry, cwd, loadSettings());
 
   return {
     getConfig(): OmniCompactSettings {
@@ -179,12 +293,12 @@ export function createOmniCompactController(
     },
     setConfig(next: OmniCompactSettings): OmniCompactSettings {
       const normalized = saveSettings(next);
-      runtimeStatus = buildRuntimeStatus(modelRegistry, normalized);
+      runtimeStatus = buildRuntimeStatus(modelRegistry, cwd, normalized);
       return normalized;
     },
     resetConfig(): OmniCompactSettings {
       const normalized = resetSettings();
-      runtimeStatus = buildRuntimeStatus(modelRegistry, normalized);
+      runtimeStatus = buildRuntimeStatus(modelRegistry, cwd, normalized);
       return normalized;
     },
     getConfigPath(): string {
@@ -194,7 +308,7 @@ export function createOmniCompactController(
       return runtimeStatus;
     },
     refreshRuntimeStatus(): OmniCompactRuntimeStatus {
-      runtimeStatus = buildRuntimeStatus(modelRegistry, loadSettings());
+      runtimeStatus = buildRuntimeStatus(modelRegistry, cwd, loadSettings());
       return runtimeStatus;
     },
   };
