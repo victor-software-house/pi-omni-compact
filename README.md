@@ -26,7 +26,7 @@ pi install git:github.com/Whamp/pi-omni-compact
 
 ## Configuration
 
-Use `/omni-compact` inside Pi to open the interactive settings panel. Model selection uses Pi's interactive searchable list selector, wraps when you move past the ends, and only shows models from Pi's current available/scoped model set, not the full registry. The panel writes config to:
+Use `/omni-compact` inside Pi to open the interactive settings panel. Model selection uses Pi's interactive searchable list selector, wraps when you move past the ends, and uses `Tab` to switch between scoped, authenticated, and all-model views. The default view is Pi's scoped model set when available, then authenticated models, then all models. The panel writes config to:
 
 ```text
 ~/.pi/agent/pi-omni-compact.json

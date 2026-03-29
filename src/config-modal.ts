@@ -14,6 +14,7 @@ import {
 } from "@mariozechner/pi-tui";
 
 import {
+  type ModelOptionView,
   type OmniCompactController,
   type OmniCompactRuntimeStatus,
 } from "./config-controller.js";
@@ -44,6 +45,12 @@ interface SelectorOption extends SelectItem {
   value: string;
   label: string;
   description?: string;
+}
+
+interface SelectorView {
+  id: string;
+  label: string;
+  options: SelectorOption[];
 }
 
 interface MenuAction {
@@ -153,24 +160,16 @@ function buildThinkingDescription(
 }
 
 function buildPanelTitle(runtimeStatus: OmniCompactRuntimeStatus): string {
+  const scopedCount = runtimeStatus.modelOptionsByView.scoped.length;
+  const authenticatedCount =
+    runtimeStatus.modelOptionsByView.authenticated.length;
+  const allCount = runtimeStatus.modelOptionsByView.all.length;
+
   if (runtimeStatus.usingScopedModels) {
-    return `Omni Compact Settings (${runtimeStatus.modelOptions.length} scoped Pi models)`;
+    return `Omni Compact Settings (${scopedCount} scoped / ${authenticatedCount} authenticated / ${allCount} total)`;
   }
 
-  return `Omni Compact Settings (${runtimeStatus.modelOptions.length} available Pi models)`;
-}
-
-function buildPanelSubtitle(
-  controller: OmniCompactController,
-  runtimeStatus: OmniCompactRuntimeStatus
-): string {
-  if (runtimeStatus.scopePatterns && runtimeStatus.scopePatterns.length > 0) {
-    return `${controller.getConfigPath()} | scope: ${runtimeStatus.scopePatterns.join(
-      ", "
-    )}`;
-  }
-
-  return controller.getConfigPath();
+  return `Omni Compact Settings (${authenticatedCount} authenticated / ${allCount} total)`;
 }
 
 function buildMenuActions(
@@ -213,9 +212,10 @@ function buildMenuActions(
   return actions;
 }
 
-function buildModelSelectorOptions(
+function buildModelSelectorViewOptions(
+  baseOptions: OmniCompactRuntimeStatus["modelOptionsByView"][ModelOptionView],
   currentModel: ModelConfig | undefined,
-  runtimeStatus: OmniCompactRuntimeStatus
+  fallbackDescription: string
 ): SelectorOption[] {
   const options: SelectorOption[] = [
     {
@@ -228,21 +228,21 @@ function buildModelSelectorOptions(
 
   if (currentModel) {
     const currentValue = toModelValue(currentModel);
-    const currentOption = runtimeStatus.modelOptions.find(
+    const currentOption = baseOptions.find(
       (option) => option.value === currentValue
     );
 
-    if (!seen.has(currentValue) && !currentOption) {
+    if (!currentOption && !seen.has(currentValue)) {
       seen.add(currentValue);
       options.push({
         value: currentValue,
         label: currentValue,
-        description: "Currently configured outside the visible Pi model list.",
+        description: fallbackDescription,
       });
     }
   }
 
-  for (const option of runtimeStatus.modelOptions) {
+  for (const option of baseOptions) {
     if (!seen.has(option.value)) {
       seen.add(option.value);
       options.push({
@@ -256,11 +256,61 @@ function buildModelSelectorOptions(
   return options;
 }
 
+function buildModelSelectorViews(
+  currentModel: ModelConfig | undefined,
+  runtimeStatus: OmniCompactRuntimeStatus
+): SelectorView[] {
+  const views: SelectorView[] = [];
+
+  if (runtimeStatus.modelOptionsByView.scoped.length > 0) {
+    views.push({
+      id: "scoped",
+      label: "Scoped",
+      options: buildModelSelectorViewOptions(
+        runtimeStatus.modelOptionsByView.scoped,
+        currentModel,
+        "Currently configured outside scoped models."
+      ),
+    });
+  }
+
+  if (runtimeStatus.modelOptionsByView.authenticated.length > 0) {
+    views.push({
+      id: "authenticated",
+      label: "Authenticated",
+      options: buildModelSelectorViewOptions(
+        runtimeStatus.modelOptionsByView.authenticated,
+        currentModel,
+        "Currently configured without authenticated access."
+      ),
+    });
+  }
+
+  views.push({
+    id: "all",
+    label: "All",
+    options: buildModelSelectorViewOptions(
+      runtimeStatus.modelOptionsByView.all,
+      currentModel,
+      "Currently configured model."
+    ),
+  });
+
+  return views;
+}
+
 function buildSimpleSelectorOptions(values: string[]): SelectorOption[] {
   return values.map((value) => ({
     value,
     label: value,
   }));
+}
+
+function buildSingleViewSelector(
+  label: string,
+  options: SelectorOption[]
+): SelectorView[] {
+  return [{ id: label.toLowerCase(), label, options }];
 }
 
 function filterOptions(
@@ -279,17 +329,36 @@ function filterOptions(
   );
 }
 
+function cycleIndex(index: number, delta: number, total: number): number {
+  return (index + delta + total) % total;
+}
+
+function getDefaultViewIndex(
+  views: SelectorView[],
+  defaultViewId?: string
+): number {
+  if (!defaultViewId) {
+    return 0;
+  }
+
+  const index = views.findIndex((view) => view.id === defaultViewId);
+  return index >= 0 ? index : 0;
+}
+
 function openSearchableSelector(
   ctx: ExtensionCommandContext,
   title: string,
-  options: SelectorOption[],
-  subtitle?: string
+  views: SelectorView[],
+  subtitle?: string,
+  defaultViewId?: string
 ): Promise<string | undefined> {
   return ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
     const searchInput = new Input();
-    let selectedValue: string | undefined = options[0]?.value;
-    let filteredOptions = options;
+    const selectedValueByView = new Map<string, string | undefined>();
+    let viewIndex = getDefaultViewIndex(views, defaultViewId);
+    let filteredOptions: SelectorOption[] = [];
     let selectedIndex = 0;
+    let selectedValue: string | undefined;
     let selectList = new SelectList([], SELECTOR_MAX_VISIBLE, {
       selectedPrefix: (text) => theme.fg("accent", text),
       selectedText: (text) => theme.fg("accent", text),
@@ -298,31 +367,24 @@ function openSearchableSelector(
       noMatch: (text) => theme.fg("warning", text),
     });
 
-    const titleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
-    const subtitleText = subtitle
-      ? new Text(theme.fg("dim", subtitle), 1, 0)
-      : undefined;
-    const searchLabelText = new Text(theme.fg("dim", "Search"), 1, 0);
-    const footerText = new Text(
-      theme.fg("dim", "Type to search | ↑↓ wrap | Enter: select | Esc: close"),
-      1,
-      0
-    );
-    const topBorder = new DynamicBorder((text) => theme.fg("accent", text));
-    const bottomBorder = new DynamicBorder((text) => theme.fg("accent", text));
+    const applyFilter = (): void => {
+      const activeView = views[viewIndex];
+      const preferredValue = selectedValueByView.get(activeView.id);
+      filteredOptions = filterOptions(
+        activeView.options,
+        searchInput.getValue()
+      );
 
-    const rebuild = (): void => {
-      filteredOptions = filterOptions(options, searchInput.getValue());
       if (filteredOptions.length === 0) {
         selectedIndex = 0;
         selectedValue = undefined;
       } else {
-        const nextIndex = selectedValue
+        const matchedIndex = preferredValue
           ? filteredOptions.findIndex(
-              (option) => option.value === selectedValue
+              (option) => option.value === preferredValue
             )
           : -1;
-        selectedIndex = nextIndex >= 0 ? nextIndex : 0;
+        selectedIndex = matchedIndex >= 0 ? matchedIndex : 0;
         selectedValue = filteredOptions[selectedIndex]?.value;
       }
 
@@ -336,6 +398,7 @@ function openSearchableSelector(
       selectList.setSelectedIndex(selectedIndex);
       selectList.onSelectionChange = (item) => {
         selectedValue = item.value;
+        selectedValueByView.set(activeView.id, item.value);
       };
     };
 
@@ -344,28 +407,54 @@ function openSearchableSelector(
         return;
       }
 
-      selectedIndex =
-        (selectedIndex + delta + filteredOptions.length) %
-        filteredOptions.length;
+      selectedIndex = cycleIndex(selectedIndex, delta, filteredOptions.length);
       selectedValue = filteredOptions[selectedIndex]?.value;
+      selectedValueByView.set(views[viewIndex].id, selectedValue);
       selectList.setSelectedIndex(selectedIndex);
     };
 
-    rebuild();
+    const cycleView = (delta: number): void => {
+      if (views.length <= 1) {
+        return;
+      }
+
+      viewIndex = cycleIndex(viewIndex, delta, views.length);
+      applyFilter();
+    };
+
+    applyFilter();
 
     return {
       render(width: number): string[] {
         const container = new Container();
-        container.addChild(topBorder);
-        container.addChild(titleText);
-        if (subtitleText) {
-          container.addChild(subtitleText);
+        const activeView = views[viewIndex];
+        const viewHint =
+          views.length > 1
+            ? `View: ${activeView.label} (${viewIndex + 1}/${views.length}) | Tab: switch views`
+            : `View: ${activeView.label}`;
+        const footerHint =
+          views.length > 1
+            ? "Type to search | ↑↓ wrap | Tab/Shift+Tab: switch views | Enter: select | Esc: close"
+            : "Type to search | ↑↓ wrap | Enter: select | Esc: close";
+
+        container.addChild(
+          new DynamicBorder((text) => theme.fg("accent", text))
+        );
+        container.addChild(
+          new Text(theme.fg("accent", theme.bold(title)), 1, 0)
+        );
+        if (subtitle) {
+          container.addChild(new Text(theme.fg("dim", subtitle), 1, 0));
         }
-        container.addChild(searchLabelText);
+        container.addChild(new Text(theme.fg("dim", viewHint), 1, 0));
+        container.addChild(new Text(theme.fg("dim", "Search"), 1, 0));
         container.addChild(searchInput);
         container.addChild(selectList);
-        container.addChild(footerText);
-        container.addChild(bottomBorder);
+        container.addChild(new Text(theme.fg("dim", footerHint), 1, 0));
+        container.addChild(
+          new DynamicBorder((text) => theme.fg("accent", text))
+        );
+
         return container.render(width);
       },
       invalidate(): void {
@@ -379,8 +468,7 @@ function openSearchableSelector(
         }
 
         if (matchesKey(data, Key.enter)) {
-          const selectedOption = filteredOptions[selectedIndex];
-          done(selectedOption?.value);
+          done(filteredOptions[selectedIndex]?.value);
           return;
         }
 
@@ -396,8 +484,20 @@ function openSearchableSelector(
           return;
         }
 
+        if (matchesKey(data, Key.tab)) {
+          cycleView(1);
+          tui.requestRender();
+          return;
+        }
+
+        if (matchesKey(data, Key.shift("tab"))) {
+          cycleView(-1);
+          tui.requestRender();
+          return;
+        }
+
         searchInput.handleInput(data);
-        rebuild();
+        applyFilter();
         tui.requestRender();
       },
     };
@@ -487,12 +587,15 @@ export async function openOmniCompactSettingsModal(
     const selectedActionId = await openSearchableSelector(
       ctx,
       buildPanelTitle(runtimeStatus),
-      menuActions.map((action) => ({
-        value: action.id,
-        label: action.label,
-        description: action.description,
-      })),
-      buildPanelSubtitle(controller, runtimeStatus)
+      buildSingleViewSelector(
+        "Settings",
+        menuActions.map((action) => ({
+          value: action.id,
+          label: action.label,
+          description: action.description,
+        }))
+      ),
+      controller.getConfigPath()
     );
     if (!selectedActionId) {
       return;
@@ -503,8 +606,9 @@ export async function openOmniCompactSettingsModal(
       const selectedValue = await openSearchableSelector(
         ctx,
         getSlotLabel(index),
-        buildModelSelectorOptions(slots[index], runtimeStatus),
-        buildModelDescription(index, runtimeStatus)
+        buildModelSelectorViews(slots[index], runtimeStatus),
+        buildModelDescription(index, runtimeStatus),
+        runtimeStatus.defaultModelView
       );
       if (!selectedValue) {
         continue;
@@ -526,7 +630,10 @@ export async function openOmniCompactSettingsModal(
       const selectedThinking = await openSearchableSelector(
         ctx,
         getThinkingLabel(index),
-        buildSimpleSelectorOptions([...THINKING_LEVELS]),
+        buildSingleViewSelector(
+          "Thinking",
+          buildSimpleSelectorOptions([...THINKING_LEVELS])
+        ),
         buildThinkingDescription(index, slots)
       );
       if (!selectedThinking) {
@@ -543,7 +650,10 @@ export async function openOmniCompactSettingsModal(
       const selectedValue = await openSearchableSelector(
         ctx,
         "Debug artifacts",
-        buildSimpleSelectorOptions(["on", "off"])
+        buildSingleViewSelector(
+          "Debug",
+          buildSimpleSelectorOptions(["on", "off"])
+        )
       );
       if (!selectedValue) {
         continue;
@@ -566,7 +676,10 @@ export async function openOmniCompactSettingsModal(
       const selectedValue = await openSearchableSelector(
         ctx,
         "Minimum summary length",
-        buildSimpleSelectorOptions(optionValues)
+        buildSingleViewSelector(
+          "Length",
+          buildSimpleSelectorOptions(optionValues)
+        )
       );
       if (!selectedValue) {
         continue;

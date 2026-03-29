@@ -14,6 +14,8 @@ import {
   type OmniCompactSettings,
 } from "./settings.js";
 
+export type ModelOptionView = "scoped" | "authenticated" | "all";
+
 export interface ModelOption {
   value: string;
   label: string;
@@ -35,10 +37,10 @@ export interface ConfiguredModelStatus {
 
 export interface OmniCompactRuntimeStatus {
   modelRegistryError?: string;
-  modelOptions: ModelOption[];
+  modelOptionsByView: Record<ModelOptionView, ModelOption[]>;
+  defaultModelView: ModelOptionView;
   configuredModels: ConfiguredModelStatus[];
   resolvedModel?: ConfiguredModelStatus;
-  scopePatterns?: string[];
   usingScopedModels: boolean;
 }
 
@@ -64,6 +66,10 @@ function formatContextWindow(contextWindow: number): string {
 }
 
 function compareModelOptions(left: ModelOption, right: ModelOption): number {
+  if (left.authConfigured !== right.authConfigured) {
+    return left.authConfigured ? -1 : 1;
+  }
+
   if (left.contextWindow !== right.contextWindow) {
     return right.contextWindow - left.contextWindow;
   }
@@ -141,83 +147,110 @@ function getScopedModelPatterns(cwd: string): string[] | undefined {
   return patterns;
 }
 
-function buildScopedAvailableModels(modelRegistry: ModelRegistry, cwd: string) {
-  const availableModels = modelRegistry.getAvailable();
-  const scopePatterns = getScopedModelPatterns(cwd);
+function buildModelOption(
+  model: {
+    provider: string;
+    id: string;
+    name: string;
+    reasoning: boolean;
+    contextWindow: number;
+  },
+  authConfigured: boolean,
+  view: ModelOptionView
+): ModelOption {
+  const descriptionParts = [
+    model.name,
+    formatContextWindow(model.contextWindow),
+  ];
 
-  if (!scopePatterns) {
-    return {
-      availableModels,
-      scopePatterns: undefined,
-      usingScopedModels: false,
-    };
+  if (model.reasoning) {
+    descriptionParts.push("reasoning");
+  }
+
+  if (view === "all" && !authConfigured) {
+    descriptionParts.push("auth missing");
   }
 
   return {
-    availableModels: availableModels.filter((model) =>
-      scopePatterns.some((pattern) =>
-        matchesModelPattern(pattern, {
-          provider: model.provider,
-          id: model.id,
-          name: model.name,
-        })
-      )
-    ),
-    scopePatterns,
-    usingScopedModels: true,
+    value: toModelOptionValue(model),
+    label: toModelOptionValue(model),
+    description: descriptionParts.join(" | "),
+    provider: model.provider,
+    id: model.id,
+    authConfigured,
+    contextWindow: model.contextWindow,
   };
 }
 
-function buildModelOptions(modelRegistry: ModelRegistry, cwd: string) {
-  const scopedModels = buildScopedAvailableModels(modelRegistry, cwd);
+function buildModelOptionsByView(modelRegistry: ModelRegistry, cwd: string) {
+  const allModels = modelRegistry.getAll();
+  const authenticatedModels = modelRegistry.getAvailable();
+  const authenticatedValues = new Set(
+    authenticatedModels.map((model) => toModelOptionValue(model))
+  );
+  const scopePatterns = getScopedModelPatterns(cwd);
+  const scopedModels = scopePatterns
+    ? authenticatedModels.filter((model) =>
+        scopePatterns.some((pattern) =>
+          matchesModelPattern(pattern, {
+            provider: model.provider,
+            id: model.id,
+            name: model.name,
+          })
+        )
+      )
+    : [];
+
+  const modelOptionsByView: Record<ModelOptionView, ModelOption[]> = {
+    scoped: scopedModels
+      .map((model) => buildModelOption(model, true, "scoped"))
+      .sort(compareModelOptions),
+    authenticated: authenticatedModels
+      .map((model) => buildModelOption(model, true, "authenticated"))
+      .sort(compareModelOptions),
+    all: allModels
+      .map((model) =>
+        buildModelOption(
+          model,
+          authenticatedValues.has(toModelOptionValue(model)),
+          "all"
+        )
+      )
+      .sort(compareModelOptions),
+  };
+
+  const usingScopedModels = modelOptionsByView.scoped.length > 0;
+  const defaultModelView: ModelOptionView = usingScopedModels
+    ? "scoped"
+    : modelOptionsByView.authenticated.length > 0
+      ? "authenticated"
+      : "all";
 
   return {
-    modelOptions: scopedModels.availableModels
-      .map((model) => ({
-        value: toModelOptionValue(model),
-        label: toModelOptionValue(model),
-        description: `${model.name} | ${formatContextWindow(model.contextWindow)}${model.reasoning ? " | reasoning" : ""}`,
-        provider: model.provider,
-        id: model.id,
-        authConfigured: true,
-        contextWindow: model.contextWindow,
-      }))
-      .sort(compareModelOptions),
-    scopePatterns: scopedModels.scopePatterns,
-    usingScopedModels: scopedModels.usingScopedModels,
-    availableModelValues: new Set(
-      scopedModels.availableModels.map((model) => toModelOptionValue(model))
+    modelOptionsByView,
+    authenticatedValues,
+    scopedValues: new Set(
+      modelOptionsByView.scoped.map((option) => option.value)
     ),
+    defaultModelView,
+    usingScopedModels,
   };
 }
 
 function buildConfiguredModelStatus(
   modelRegistry: ModelRegistry,
   config: OmniCompactSettings,
-  modelOptions: ModelOption[],
-  availableModelValues: Set<string>,
+  allModelOptions: ModelOption[],
+  authenticatedValues: Set<string>,
+  scopedValues: Set<string>,
   usingScopedModels: boolean
 ): ConfiguredModelStatus[] {
   const optionByValue = new Map(
-    modelOptions.map((option) => [option.value, option])
+    allModelOptions.map((option) => [option.value, option])
   );
 
   return config.models.map((model, index) => {
     const value = toModelOptionValue(model);
-    const knownOption = optionByValue.get(value);
-    const isInScopedList = availableModelValues.has(value);
-
-    if (knownOption) {
-      return {
-        index,
-        value,
-        label: knownOption.label,
-        description: knownOption.description,
-        authConfigured: knownOption.authConfigured,
-        found: true,
-      };
-    }
-
     const registeredModel = modelRegistry.find(model.provider, model.id);
     if (!registeredModel) {
       return {
@@ -231,19 +264,27 @@ function buildConfiguredModelStatus(
       };
     }
 
-    const descriptionParts = [
-      registeredModel.name,
-      formatContextWindow(registeredModel.contextWindow),
-    ];
-    if (registeredModel.reasoning) {
-      descriptionParts.push("reasoning");
+    const knownOption = optionByValue.get(value);
+    const authConfigured = authenticatedValues.has(value);
+    const inScopedView = scopedValues.has(value);
+    const descriptionParts = knownOption
+      ? knownOption.description.split(" | ")
+      : [
+          registeredModel.name,
+          formatContextWindow(registeredModel.contextWindow),
+        ];
+
+    if (
+      authConfigured &&
+      usingScopedModels &&
+      !inScopedView &&
+      !descriptionParts.includes("outside scoped models")
+    ) {
+      descriptionParts.push("outside scoped models");
     }
-    if (!isInScopedList) {
-      descriptionParts.push(
-        usingScopedModels
-          ? "outside current Pi scoped model list"
-          : "auth missing"
-      );
+
+    if (!authConfigured && !descriptionParts.includes("auth missing")) {
+      descriptionParts.push("auth missing");
     }
 
     return {
@@ -251,7 +292,7 @@ function buildConfiguredModelStatus(
       value,
       label: value,
       description: descriptionParts.join(" | "),
-      authConfigured: isInScopedList,
+      authConfigured,
       found: true,
     };
   });
@@ -262,22 +303,23 @@ function buildRuntimeStatus(
   cwd: string,
   config: OmniCompactSettings
 ): OmniCompactRuntimeStatus {
-  const scopedModels = buildModelOptions(modelRegistry, cwd);
+  const views = buildModelOptionsByView(modelRegistry, cwd);
   const configuredModels = buildConfiguredModelStatus(
     modelRegistry,
     config,
-    scopedModels.modelOptions,
-    scopedModels.availableModelValues,
-    scopedModels.usingScopedModels
+    views.modelOptionsByView.all,
+    views.authenticatedValues,
+    views.scopedValues,
+    views.usingScopedModels
   );
 
   return {
     modelRegistryError: modelRegistry.getError(),
-    modelOptions: scopedModels.modelOptions,
+    modelOptionsByView: views.modelOptionsByView,
+    defaultModelView: views.defaultModelView,
     configuredModels,
     resolvedModel: configuredModels.find((model) => model.authConfigured),
-    scopePatterns: scopedModels.scopePatterns,
-    usingScopedModels: scopedModels.usingScopedModels,
+    usingScopedModels: views.usingScopedModels,
   };
 }
 
