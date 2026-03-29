@@ -1,8 +1,8 @@
 /**
  * Model resolution for pi-omni-compact.
  *
- * Iterates the configured model list and returns the first model
- * with a valid API key from the model registry.
+ * Iterates the configured model list and returns the first model whose
+ * request authentication resolves successfully through Pi's model registry.
  */
 
 import type { ModelRegistry } from "@mariozechner/pi-coding-agent";
@@ -13,12 +13,11 @@ export interface ResolvedModel {
   provider: string;
   model: string;
   thinking: string;
-  apiKey: string;
 }
 
 /**
  * Resolve the first available model from the configured list.
- * Returns undefined if no model has a valid API key.
+ * Returns undefined if no configured model can resolve request auth.
  */
 export async function resolveModel(
   modelRegistry: ModelRegistry,
@@ -30,8 +29,8 @@ export async function resolveModel(
       continue;
     }
 
-    const apiKey = await modelRegistry.getApiKey(model);
-    if (!apiKey) {
+    const auth = await modelRegistry.getApiKeyAndHeaders(model);
+    if (!auth.ok) {
       continue;
     }
 
@@ -39,7 +38,6 @@ export async function resolveModel(
       provider: config.provider,
       model: config.id,
       thinking: config.thinking,
-      apiKey,
     };
   }
   return undefined;

@@ -31,6 +31,10 @@ function findPiReadMap(): string | undefined {
 
 /**
  * Spawn a pi subprocess to generate a summarization.
+ *
+ * The child process resolves authentication through Pi's normal model registry,
+ * config files, and environment. We do not try to synthesize runtime auth here,
+ * because current Pi models may require request headers in addition to API keys.
  */
 export async function runSummarizationAgent(
   input: string,
@@ -87,7 +91,6 @@ export async function runSummarizationAgent(
         cwd,
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, PI_API_KEY: model.apiKey },
       });
 
       let buffer = "";

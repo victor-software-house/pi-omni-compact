@@ -5,8 +5,6 @@
  * spawning real pi processes.
  */
 
-import type { ChildProcess } from "node:child_process";
-
 import { describe, expect, it, vi } from "vitest";
 
 import type { ResolvedModel } from "../../src/models.js";
@@ -43,28 +41,31 @@ vi.mock("node:os", () => ({
 // eslint-disable-next-line import/first
 import { runSummarizationAgent } from "../../src/subprocess.js";
 
+type MockReadableStream = {
+  on: ReturnType<typeof vi.fn>;
+};
+
+type MockProcess = {
+  stdout: MockReadableStream;
+  stderr: MockReadableStream;
+  on: ReturnType<typeof vi.fn>;
+  kill: ReturnType<typeof vi.fn>;
+  killed: boolean;
+};
+
 describe("runSummarizationAgent", () => {
   const mockModel: ResolvedModel = {
     provider: "google",
     model: "gemini-flash",
     thinking: "high",
-    apiKey: "test-api-key-123",
   };
 
   const mockCwd = "/test/project";
 
   // Mock process events
-  let mockStdout: {
-    on: ReturnType<typeof vi.fn>;
-  };
-  let mockStderr: {
-    on: ReturnType<typeof vi.fn>;
-  };
-  let mockProc: Partial<ChildProcess> & {
-    on: ReturnType<typeof vi.fn>;
-    kill: ReturnType<typeof vi.fn>;
-    killed: boolean;
-  };
+  let mockStdout: MockReadableStream;
+  let mockStderr: MockReadableStream;
+  let mockProc: MockProcess;
 
   // Store event handlers for triggering
   let stdoutDataHandler: ((data: Buffer) => void) | undefined;
@@ -90,24 +91,26 @@ describe("runSummarizationAgent", () => {
         if (event === "data") {
           stdoutDataHandler = handler;
         }
+        return mockStdout;
       }),
     };
 
     mockStderr = {
-      on: vi.fn(),
+      on: vi.fn(() => mockStderr),
     };
 
     mockProc = {
-      stdout: mockStdout as unknown as ChildProcess["stdout"],
-      stderr: mockStderr as unknown as ChildProcess["stderr"],
+      stdout: mockStdout,
+      stderr: mockStderr,
       on: vi.fn((event: string, handler: unknown) => {
         if (event === "close") {
           closeHandler = handler as (code: number | null) => void;
         } else if (event === "error") {
           errorHandler = handler as () => void;
         }
+        return mockProc;
       }),
-      kill: vi.fn(),
+      kill: vi.fn(() => true),
       killed: false,
     };
 
@@ -205,9 +208,6 @@ describe("runSummarizationAgent", () => {
         cwd: mockCwd,
         shell: false,
         stdio: ["ignore", "pipe", "pipe"],
-        env: expect.objectContaining({
-          PI_API_KEY: "test-api-key-123",
-        }),
       }
     );
   });

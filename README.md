@@ -22,7 +22,7 @@ pi install git:github.com/Whamp/pi-omni-compact
 ## Requirements
 
 - [pi](https://github.com/mariozechner/pi) installed
-- An API key for a large-context model configured in pi's model registry
+- Working request auth for a large-context model configured in Pi's model registry
 
 ## Configuration
 
@@ -59,11 +59,11 @@ Pick models that exist in your Pi setup. A model with a 1M+ token context window
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `models` | See above | Ordered list of models to try. First with a valid API key wins. |
+| `models` | See above | Ordered list of models to try. First model whose request auth resolves wins. |
 | `debugCompactions` | `false` | Save input/output JSON to `~/.pi/agent/extensions/pi-omni-compact/compactions/` for diagnosing bad summaries. |
 | `minSummaryChars` | `100` | Minimum summary length. Shorter output triggers fallback to default compaction. |
 
-API keys are resolved through pi's model registry — no separate key configuration needed.
+Request auth is resolved through Pi's model registry — no separate extension-specific auth configuration is needed.
 
 ### Optional: pi-read-map
 
@@ -80,11 +80,11 @@ For both events, the extension:
 
 1. Analyzes the full session for structural metadata — tool usage patterns, friction signals (error loops, rephrasing cascades), file operations, and session boundaries
 2. Serializes the conversation and metadata into a hybrid text format
-3. Resolves the first configured model with a valid API key
+3. Resolves the first configured model whose request auth resolves successfully
 4. Spawns a pi subprocess with read-only tools (`read`, `grep`, `find`, `ls`) and pi-read-map if installed
 5. The subprocess reads the conversation and referenced source files, then returns a structured summary
 
-On any failure — no API key, subprocess crash, output too short — the extension returns `undefined` and pi falls back to its default compaction.
+On any failure — no configured model can resolve request auth, subprocess crash, output too short — the extension returns `undefined` and Pi falls back to its default compaction.
 
 ## Summary format
 
@@ -132,7 +132,7 @@ src/
   config-command.ts     /omni-compact command family
   config-controller.ts  Settings persistence + runtime verification
   config-modal.ts       Interactive TUI settings panel
-  models.ts             Resolve first configured model with valid API key
+  models.ts             Resolve first configured model whose request auth resolves
   serializer.ts         Convert pi messages to LLM input format
   session-analysis.ts   Extract structural metadata (friction, boundaries, file ops)
   prompts.ts            System prompts (initial, incremental, branch)

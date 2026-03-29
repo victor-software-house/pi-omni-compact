@@ -22,7 +22,7 @@ export function createMockModelRegistry() {
     find: vi.fn(),
     getAll: vi.fn().mockReturnValue([]),
     getAvailable: vi.fn().mockReturnValue([]),
-    getApiKey: vi.fn(),
+    getApiKeyAndHeaders: vi.fn(),
     getError: vi.fn(),
   };
 }

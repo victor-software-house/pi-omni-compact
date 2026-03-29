@@ -7,7 +7,7 @@ import { resolveModel } from "../../src/models.js";
 function createMockRegistry() {
   return {
     find: vi.fn(),
-    getApiKey: vi.fn(),
+    getApiKeyAndHeaders: vi.fn(),
   };
 }
 
@@ -18,11 +18,15 @@ const testModels: ModelConfig[] = [
 ];
 
 describe("resolveModel", () => {
-  it("returns the first model with a valid API key", async () => {
+  it("returns the first model whose request auth resolves", async () => {
     const registry = createMockRegistry();
     const mockModel = { provider: "google", id: "gemini-flash" };
     registry.find.mockReturnValue(mockModel);
-    registry.getApiKey.mockResolvedValue("sk-test-key");
+    registry.getApiKeyAndHeaders.mockResolvedValue({
+      ok: true,
+      apiKey: "sk-test-key",
+      headers: { "x-test": "1" },
+    });
 
     const result = await resolveModel(registry as never, testModels);
 
@@ -30,7 +34,6 @@ describe("resolveModel", () => {
       provider: "google",
       model: "gemini-flash",
       thinking: "high",
-      apiKey: "sk-test-key",
     });
     expect(registry.find).toHaveBeenCalledWith("google", "gemini-flash");
   });
@@ -40,7 +43,10 @@ describe("resolveModel", () => {
     registry.find
       .mockReturnValueOnce(null)
       .mockReturnValueOnce({ provider: "google", id: "gemini-pro" });
-    registry.getApiKey.mockResolvedValue("sk-pro-key");
+    registry.getApiKeyAndHeaders.mockResolvedValue({
+      ok: true,
+      apiKey: "sk-pro-key",
+    });
 
     const result = await resolveModel(registry as never, testModels);
 
@@ -48,30 +54,51 @@ describe("resolveModel", () => {
       provider: "google",
       model: "gemini-pro",
       thinking: "medium",
-      apiKey: "sk-pro-key",
     });
     expect(registry.find).toHaveBeenCalledTimes(2);
   });
 
-  it("skips models without an API key", async () => {
+  it("skips models whose request auth fails", async () => {
     const registry = createMockRegistry();
     const model1 = { provider: "google", id: "gemini-flash" };
     const model2 = { provider: "google", id: "gemini-pro" };
     registry.find.mockReturnValueOnce(model1).mockReturnValueOnce(model2);
-    registry.getApiKey
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce("sk-pro-key");
+    registry.getApiKeyAndHeaders
+      .mockResolvedValueOnce({ ok: false, error: "Missing API key" })
+      .mockResolvedValueOnce({ ok: true, apiKey: "sk-pro-key" });
 
     const result = await resolveModel(registry as never, testModels);
 
     expect(result?.model).toBe("gemini-pro");
-    expect(registry.getApiKey).toHaveBeenCalledTimes(2);
+    expect(registry.getApiKeyAndHeaders).toHaveBeenCalledTimes(2);
   });
 
-  it("returns undefined when no model has a valid key", async () => {
+  it("accepts header-only request auth", async () => {
+    const registry = createMockRegistry();
+    registry.find.mockReturnValue({ provider: "test", id: "header-only" });
+    registry.getApiKeyAndHeaders.mockResolvedValue({
+      ok: true,
+      headers: { Authorization: "Bearer token" },
+    });
+
+    const result = await resolveModel(registry as never, [
+      { provider: "test", id: "header-only", thinking: "high" },
+    ]);
+
+    expect(result).toStrictEqual({
+      provider: "test",
+      model: "header-only",
+      thinking: "high",
+    });
+  });
+
+  it("returns undefined when no model can resolve request auth", async () => {
     const registry = createMockRegistry();
     registry.find.mockReturnValue({ provider: "test", id: "test" });
-    registry.getApiKey.mockResolvedValue(null);
+    registry.getApiKeyAndHeaders.mockResolvedValue({
+      ok: false,
+      error: "Missing API key",
+    });
 
     const result = await resolveModel(registry as never, testModels);
 
@@ -90,7 +117,10 @@ describe("resolveModel", () => {
       provider: "google",
       id: "gemini-flash",
     });
-    registry.getApiKey.mockResolvedValue("key");
+    registry.getApiKeyAndHeaders.mockResolvedValue({
+      ok: true,
+      apiKey: "key",
+    });
 
     const result = await resolveModel(registry as never, testModels);
 

@@ -36,7 +36,7 @@ describe("session_before_compact handler", () => {
     );
   });
 
-  it("returns undefined when model has no API key", async () => {
+  it("returns undefined when model request auth cannot be resolved", async () => {
     const mockPi = createMockPi();
     piOmniCompact(mockPi as never);
 
@@ -45,7 +45,10 @@ describe("session_before_compact handler", () => {
       provider: "google",
       id: "gemini-flash",
     });
-    ctx.modelRegistry.getApiKey.mockResolvedValue(null);
+    ctx.modelRegistry.getApiKeyAndHeaders.mockResolvedValue({
+      ok: false,
+      error: "Missing API key",
+    });
 
     const event = {
       preparation: createPreparation(),
